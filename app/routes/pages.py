@@ -8,7 +8,6 @@ from app.services.storage import recipe_storage
 router = APIRouter()
 templates = Jinja2Templates(directory="app/templates")
 
-
 @router.get("/", response_class=HTMLResponse)
 def home(request: Request, search: Optional[str] = None, message: Optional[str] = None):
     """Home page with recipe list and search"""
@@ -17,23 +16,29 @@ def home(request: Request, search: Optional[str] = None, message: Optional[str] 
     else:
         recipes = recipe_storage.get_all_recipes()
     
-    return templates.TemplateResponse("index.html", {
-        "request": request,
-        "recipes": recipes,
-        "search_query": search or "",
-        "message": message
-    })
-
+    return templates.TemplateResponse(
+        request=request,
+        name="index.html", 
+        context={
+            "request": request,
+            "recipes": recipes,
+            "search_query": search or "",
+            "message": message
+        }
+    )
 
 @router.get("/recipes/new", response_class=HTMLResponse)
 def new_recipe_form(request: Request):
     """New recipe form"""
-    return templates.TemplateResponse("recipe_form.html", {
-        "request": request,
-        "recipe": None,
-        "is_edit": False
-    })
-
+    return templates.TemplateResponse(
+        request=request,
+        name="recipe_form.html", 
+        context={
+            "request": request,
+            "recipe": None,
+            "is_edit": False
+        }
+    )
 
 @router.get("/recipes/{recipe_id}", response_class=HTMLResponse)
 def recipe_detail(request: Request, recipe_id: str, message: Optional[str] = None):
@@ -42,12 +47,15 @@ def recipe_detail(request: Request, recipe_id: str, message: Optional[str] = Non
     if not recipe:
         raise HTTPException(status_code=404, detail="Recipe not found")
     
-    return templates.TemplateResponse("recipe_detail.html", {
-        "request": request,
-        "recipe": recipe,
-        "message": message
-    })
-
+    return templates.TemplateResponse(
+        request=request,
+        name="recipe_detail.html", 
+        context={
+            "request": request,
+            "recipe": recipe,
+            "message": message
+        }
+    )
 
 @router.get("/recipes/{recipe_id}/edit", response_class=HTMLResponse)
 def edit_recipe_form(request: Request, recipe_id: str):
@@ -56,12 +64,15 @@ def edit_recipe_form(request: Request, recipe_id: str):
     if not recipe:
         raise HTTPException(status_code=404, detail="Recipe not found")
     
-    return templates.TemplateResponse("recipe_form.html", {
-        "request": request,
-        "recipe": recipe,
-        "is_edit": True
-    })
-
+    return templates.TemplateResponse(
+        request=request,
+        name="recipe_form.html", 
+        context={
+            "request": request,
+            "recipe": recipe,
+            "is_edit": True
+        }
+    )
 
 @router.post("/recipes/new")
 def create_recipe_form(
@@ -109,7 +120,6 @@ def create_recipe_form(
             url=f"/?message=Error creating recipe: {str(e)}",
             status_code=303
         )
-
 
 @router.post("/recipes/{recipe_id}/edit")
 def update_recipe_form(
@@ -164,7 +174,6 @@ def update_recipe_form(
             status_code=303
         )
 
-
 @router.post("/recipes/{recipe_id}/delete")
 def delete_recipe_form(recipe_id: str):
     """Handle recipe deletion"""
@@ -180,11 +189,14 @@ def delete_recipe_form(recipe_id: str):
             status_code=303
         )
 
-
 @router.get("/import", response_class=HTMLResponse)
 def import_page(request: Request, message: Optional[str] = None):
     """Import recipes page"""
-    return templates.TemplateResponse("import.html", {
-        "request": request,
-        "message": message
-    })
+    return templates.TemplateResponse(
+        request=request,
+        name="import.html", 
+        context={
+            "request": request,
+            "message": message
+        }
+    )
