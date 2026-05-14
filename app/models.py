@@ -24,13 +24,6 @@ class Recipe(BaseModel):
     created_at: datetime = Field(default_factory=datetime.now)
     updated_at: datetime = Field(default_factory=datetime.now)
 
-
-    class Config:
-        json_encoders = {
-            datetime: lambda v: v.isoformat()
-        }
-
-
 class RecipeCreate(BaseModel):
     title: str
     description: str
@@ -38,7 +31,6 @@ class RecipeCreate(BaseModel):
     instructions: str
     tags: List[str] = Field(default_factory=list)
     difficulty: DifficultyLevel
-
 
 class RecipeUpdate(BaseModel):
     title: str
