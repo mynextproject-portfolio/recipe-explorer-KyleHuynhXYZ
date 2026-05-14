@@ -50,6 +50,7 @@ app.include_router(pages.router)
 def health_check():
     return {"status": "healthy"}
 
-# @app.get("/status")
-# def status():
-#     return {"status": "ok", "version": "1.0.0"}
+@app.get("/status")
+def status():
+    return {"status": "ok", "version": "1.0.0"}
+
