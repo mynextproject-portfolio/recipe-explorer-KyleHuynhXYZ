@@ -37,6 +37,7 @@ class RecipeStorage:
             return None
         
         recipe = self.recipes[recipe_id]
+        # FIX: Updated to model_dump()
         updated_data = recipe_data.model_dump()
         for key, value in updated_data.items():
             setattr(recipe, key, value)
