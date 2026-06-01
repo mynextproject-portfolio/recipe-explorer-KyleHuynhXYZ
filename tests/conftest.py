@@ -27,6 +27,7 @@ def sample_recipe_data():
     return {
         "title": "Test Recipe",
         "description": "A test recipe",
+        "cuisine": "Fusion",
         "ingredients": ["ingredient 1", "ingredient 2"],
         "instructions": [
             "First, do step 1.",

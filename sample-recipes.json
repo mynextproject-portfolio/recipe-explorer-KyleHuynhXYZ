@@ -3,6 +3,7 @@
     "id": "poutine-canada-001",
     "title": "Classic Quebec Poutine",
     "description": "The original comfort food from Quebec - crispy fries topped with fresh cheese curds and rich brown gravy. A perfect combination of textures and flavors that has become Canada's national dish.",
+    "cuisine": "Canadian",
     "ingredients": [
       "4 large russet potatoes, cut into fries",
       "2 cups fresh cheese curds, at room temperature",
@@ -32,6 +33,7 @@
     "id": "shuba-russia-002",
     "title": "Shuba (Herring Under a Fur Coat)",
     "description": "A beloved Russian layered salad that's essential at New Year celebrations. This colorful dish combines salted herring with layers of vegetables and mayonnaise, creating a rich and festive treat.",
+    "cuisine": "Russian",
     "ingredients": [
       "4 salted herring fillets, finely chopped",
       "3 medium potatoes, boiled and grated",
@@ -64,6 +66,7 @@
     "id": "guo-bao-rou-china-003",
     "title": "Guo Bao Rou (Sweet and Sour Crispy Pork)",
     "description": "A signature dish from Northeast China with perfectly crispy pork pieces coated in a glossy sweet and sour sauce. The key is achieving the right balance of crispy texture and tangy-sweet flavor.",
+    "cuisine": "Chinese",
     "ingredients": [
       "1 lb pork tenderloin, cut into 2-inch strips",
       "1/2 cup cornstarch",

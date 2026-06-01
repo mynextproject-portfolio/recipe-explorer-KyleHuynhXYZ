@@ -18,12 +18,16 @@
         <p class="lead">{{ recipe.description }}</p>
         
         <div class="row mb-4">
-            <div class="col-md-6">
+            <div class="col-md-4">
+                <h6>Cuisine</h6>
+                <span class="badge bg-info text-dark fs-6">{{ recipe.cuisine }}</span>
+            </div>
+            <div class="col-md-4">
                 <h6>Servings</h6>
                 <span class="badge bg-primary fs-6">{{ recipe.servings }}</span>
             </div>
             {% if recipe.tags %}
-            <div class="col-md-6">
+            <div class="col-md-4">
                 <h6>Tags</h6>
                 <div>
                     {% for tag in recipe.tags %}

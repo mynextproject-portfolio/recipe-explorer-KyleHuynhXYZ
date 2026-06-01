@@ -33,6 +33,12 @@
                 <label for="description" class="form-label">Description</label>
                 <textarea class="form-control" id="description" name="description" rows="3" required>{% if recipe %}{{ recipe.description }}{% endif %}</textarea>
             </div>
+
+            <div class="mb-3">
+                <label for="cuisine" class="form-label">Cuisine</label>
+                <input type="text" class="form-control" id="cuisine" name="cuisine" 
+                       value="{% if recipe %}{{ recipe.cuisine }}{% endif %}" required>
+            </div>
             
             <div class="mb-3">
                 <label for="servings" class="form-label">Servings</label>

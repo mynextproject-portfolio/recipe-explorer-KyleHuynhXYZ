@@ -11,6 +11,7 @@ class Recipe(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     title: str 
     description: str
+    cuisine: str
     ingredients: List[str]
     instructions: List[str]
     servings: int = Field(default=1, ge=1)
@@ -21,6 +22,7 @@ class Recipe(BaseModel):
 class RecipeCreate(BaseModel):
     title: str
     description: str
+    cuisine: str
     ingredients: List[str]
     instructions: List[str]
     servings: int = Field(default=1, ge=1)
@@ -29,6 +31,7 @@ class RecipeCreate(BaseModel):
 class RecipeUpdate(BaseModel):
     title: str
     description: str
+    cuisine: str
     ingredients: List[str]
     instructions: List[str]
     servings: int

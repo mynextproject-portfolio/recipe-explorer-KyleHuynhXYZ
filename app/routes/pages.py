@@ -79,6 +79,7 @@ def create_recipe_form(
     request: Request,
     title: str = Form(...),
     description: str = Form(...),
+    cuisine: str = Form(...),
     servings: int = Form(...),
     ingredients: str = Form(...),
     instructions: str = Form(...),
@@ -102,9 +103,13 @@ def create_recipe_form(
         if len(instruction_steps) == 0:
             raise ValueError("Instructions are required")
         
+        if not cuisine.strip():
+            raise ValueError("Cuisine is required")
+        
         recipe_data = RecipeCreate(
             title=title,
             description=description,
+            cuisine=cuisine.strip(),
             ingredients=ingredient_list,
             instructions=instruction_steps,
             servings=servings,
@@ -128,6 +133,7 @@ def update_recipe_form(
     recipe_id: str,
     title: str = Form(...),
     description: str = Form(...),
+    cuisine: str = Form(...),
     servings: int = Form(...),
     ingredients: str = Form(...),
     instructions: str = Form(...),
@@ -150,9 +156,13 @@ def update_recipe_form(
         if len(instruction_steps) == 0:
             raise ValueError("Instructions are required")
         
+        if not cuisine.strip():
+            raise ValueError("Cuisine is required")
+        
         recipe_data = RecipeUpdate(
             title=title,
             description=description,
+            cuisine=cuisine.strip(),
             ingredients=ingredient_list,
             instructions=instruction_steps,
             servings=servings,
