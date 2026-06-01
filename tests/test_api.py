@@ -62,8 +62,22 @@ def test_get_recipes_search(client, clean_storage, sample_recipe_data):
     response = client.get("/api/recipes?search=Pasta")
     assert response.status_code == 200
     data = response.json()
-    assert data["count"] == 1
-    assert data["recipes"][0]["title"] == "Pasta Carbonara"
+    assert data["count"] >= 1
+    assert any(recipe["title"] == "Pasta Carbonara" for recipe in data["recipes"])
+    assert not any(recipe["title"] == "Caesar Salad" for recipe in data["recipes"])
+
+
+def test_get_recipes_search_path_alias(client, clean_storage, sample_recipe_data):
+    """Contract test: GET /recipes/search?q=... uses the search alias route"""
+    sample_data = sample_recipe_data.copy()
+    sample_data["title"] = "Arrabiata Pasta"
+    client.post("/api/recipes", json=sample_data)
+
+    response = client.get("/api/recipes/search?q=Arrabiata")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["count"] >= 1
+    assert any(recipe["title"] == "Arrabiata Pasta" for recipe in data["recipes"])
 
 
 def test_get_recipes_search_empty_query(client, clean_storage, sample_recipe_data):

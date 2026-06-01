@@ -71,6 +71,12 @@ def get_recipes(search: Optional[str] = Query(None, max_length=200)):
         )
 
 
+@router.get("/recipes/search")
+def search_recipes(q: Optional[str] = Query(None, max_length=200)):
+    """Search recipes using the legacy /recipes/search?q=... route."""
+    return get_recipes(search=q)
+
+
 @router.get("/recipes/export")
 def export_recipes():
     """Export all recipes as JSON.
