@@ -3,6 +3,8 @@ Comprehensive contract and validation tests for Recipe Explorer API.
 Tests validate API responses, error handling, and schema compliance.
 """
 
+from app.services.themealdb import ExternalAPIError
+
 # ============================================================================
 # SMOKE TESTS
 # ============================================================================
@@ -78,6 +80,54 @@ def test_get_recipes_search_empty_query(client, clean_storage, sample_recipe_dat
         assert data["count"] == 1
 
 
+def test_search_combines_internal_and_external_results(client, clean_storage, sample_recipe_data, monkeypatch):
+    """Contract test: GET /recipes returns both internal and external search results"""
+    sample_data = sample_recipe_data.copy()
+    sample_data["title"] = "Apple Pie"
+    client.post("/api/recipes", json=sample_data)
+
+    external_recipe = {
+        "id": "external-52772",
+        "title": "External Apple Pie",
+        "description": "A tasty external recipe",
+        "cuisine": "American",
+        "ingredients": ["1 Apple", "1 cup sugar"],
+        "instructions": ["Mix ingredients."],
+        "servings": 1,
+        "tags": ["external"],
+        "created_at": "2024-01-01T10:00:00",
+        "updated_at": "2024-01-01T10:00:00",
+        "source": "external"
+    }
+    monkeypatch.setattr("app.routes.api.search_meals", lambda q: [external_recipe])
+
+    response = client.get("/api/recipes?search=Apple")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["count"] == 2
+    assert any(recipe["source"] == "internal" for recipe in data["recipes"])
+    assert any(recipe["source"] == "external" for recipe in data["recipes"])
+
+
+def test_search_external_api_failure_returns_internal_results(client, clean_storage, sample_recipe_data, monkeypatch):
+    """Contract test: external API failure does not crash combined search"""
+    sample_data = sample_recipe_data.copy()
+    sample_data["title"] = "Apple Pie"
+    client.post("/api/recipes", json=sample_data)
+
+    def raise_error(_):
+        raise ExternalAPIError("TheMealDB service is unavailable")
+
+    monkeypatch.setattr("app.routes.api.search_meals", raise_error)
+
+    response = client.get("/api/recipes?search=Apple")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["count"] == 1
+    assert data["recipes"][0]["source"] == "internal"
+    assert "external_error" in data
+
+
 # ============================================================================
 # GET /recipes/{id} ENDPOINT TESTS
 # ============================================================================
@@ -92,6 +142,53 @@ def test_get_recipe_by_id(client, clean_storage, sample_recipe_data):
     recipe = response.json()
     assert recipe["id"] == recipe_id
     assert recipe["title"] == sample_recipe_data["title"]
+    assert recipe["source"] == "internal"
+
+
+def test_get_internal_recipe_by_id(client, clean_storage, sample_recipe_data):
+    """Contract test: GET /recipes/internal/{id} returns internal recipe"""
+    create_response = client.post("/api/recipes", json=sample_recipe_data)
+    recipe_id = create_response.json()["id"]
+
+    response = client.get(f"/api/recipes/internal/{recipe_id}")
+    assert response.status_code == 200
+    recipe = response.json()
+    assert recipe["id"] == recipe_id
+    assert recipe["source"] == "internal"
+
+
+def test_get_external_recipe_by_id(client, clean_storage, monkeypatch):
+    """Contract test: GET /recipes/external/{id} returns external recipe"""
+    external_recipe = {
+        "id": "external-52772",
+        "title": "External Recipe",
+        "description": "External instructions",
+        "cuisine": "International",
+        "ingredients": ["1 cup ingredient"],
+        "instructions": ["Cook it."],
+        "servings": 1,
+        "tags": ["external"],
+        "created_at": "2024-01-01T10:00:00",
+        "updated_at": "2024-01-01T10:00:00",
+        "source": "external"
+    }
+    monkeypatch.setattr("app.routes.api.get_meal_by_id", lambda recipe_id: external_recipe)
+
+    response = client.get("/api/recipes/external/52772")
+    assert response.status_code == 200
+    recipe = response.json()
+    assert recipe["id"] == "external-52772"
+    assert recipe["source"] == "external"
+
+
+def test_get_external_recipe_not_found_returns_404(client, clean_storage, monkeypatch):
+    """Contract test: GET /recipes/external/{id} when not found returns 404"""
+    monkeypatch.setattr("app.routes.api.get_meal_by_id", lambda recipe_id: None)
+
+    response = client.get("/api/recipes/external/99999")
+    assert response.status_code == 404
+    data = response.json()
+    assert "detail" in data
 
 
 def test_recipe_not_found_returns_404(client, clean_storage):
