@@ -36,6 +36,16 @@
 </div>
 {% endif %}
 
+{% if external_error %}
+<div class="row mb-3">
+    <div class="col-12">
+        <div class="alert alert-warning">
+            External search results could not be loaded: {{ external_error }}
+        </div>
+    </div>
+</div>
+{% endif %}
+
 <!-- Recipe Grid -->
 <div class="row">
     {% if recipes %}
@@ -44,6 +54,9 @@
             <div class="card h-100">
                 <div class="card-body">
                     <h5 class="card-title">{{ recipe.title }}</h5>
+                    {% if recipe.source == 'external' %}
+                    <span class="badge bg-info mb-2">External</span>
+                    {% endif %}
                     <p class="card-text">{{ recipe.description[:100] }}{% if recipe.description|length > 100 %}...{% endif %}</p>
                     <div class="mb-2">
                         <small class="text-muted">
@@ -66,7 +79,9 @@
                 </div>
                 <div class="card-footer bg-transparent">
                     <a href="/recipes/{{ recipe.id }}" class="btn btn-primary btn-sm">View Recipe</a>
+                    {% if recipe.source != 'external' %}
                     <a href="/recipes/{{ recipe.id }}/edit" class="btn btn-outline-secondary btn-sm">Edit</a>
+                    {% endif %}
                 </div>
             </div>
         </div>

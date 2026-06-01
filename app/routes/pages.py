@@ -1,9 +1,11 @@
+from datetime import datetime
 from fastapi import APIRouter, Request, Form, HTTPException, Depends
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from typing import List, Optional
 from app.models import RecipeCreate, RecipeUpdate
 from app.services.storage import recipe_storage
+from app.services.themealdb import ExternalAPIError, get_meal_by_id, search_meals
 
 router = APIRouter()
 templates = Jinja2Templates(directory="app/templates")
@@ -11,11 +13,25 @@ templates = Jinja2Templates(directory="app/templates")
 @router.get("/", response_class=HTMLResponse)
 def home(request: Request, search: Optional[str] = None, message: Optional[str] = None):
     """Home page with recipe list and search"""
+    external_error = None
     if search:
-        recipes = recipe_storage.search_recipes(search)
+        internal_results = recipe_storage.search_recipes(search)
+        try:
+            external_results = search_meals(search)
+        except ExternalAPIError as exc:
+            external_results = []
+            external_error = str(exc)
     else:
-        recipes = recipe_storage.get_all_recipes()
-    
+        internal_results = recipe_storage.get_all_recipes()
+        external_results = []
+
+    recipes = []
+    for recipe in internal_results:
+        recipe_dict = recipe.model_dump(mode="json")
+        recipe_dict["source"] = "internal"
+        recipes.append(recipe_dict)
+    recipes.extend(external_results)
+
     return templates.TemplateResponse(
         request=request,
         name="index.html", 
@@ -23,7 +39,8 @@ def home(request: Request, search: Optional[str] = None, message: Optional[str] 
             "request": request,
             "recipes": recipes,
             "search_query": search or "",
-            "message": message
+            "message": message,
+            "external_error": external_error,
         }
     )
 
@@ -44,8 +61,23 @@ def new_recipe_form(request: Request):
 def recipe_detail(request: Request, recipe_id: str, message: Optional[str] = None):
     """Recipe detail page"""
     recipe = recipe_storage.get_recipe(recipe_id)
-    if not recipe:
-        raise HTTPException(status_code=404, detail="Recipe not found")
+    if recipe:
+        recipe = recipe.model_dump(mode="json")
+        recipe["source"] = "internal"
+    else:
+        if recipe_id.startswith("external-"):
+            external_id = recipe_id.replace("external-", "", 1)
+            try:
+                recipe = get_meal_by_id(external_id)
+                if recipe:
+                    recipe["created_at"] = datetime.fromisoformat(recipe["created_at"])
+                    recipe["updated_at"] = datetime.fromisoformat(recipe["updated_at"])
+                else:
+                    raise HTTPException(status_code=404, detail="Recipe not found")
+            except ExternalAPIError as exc:
+                raise HTTPException(status_code=502, detail=str(exc))
+        else:
+            raise HTTPException(status_code=404, detail="Recipe not found")
     
     return templates.TemplateResponse(
         request=request,
