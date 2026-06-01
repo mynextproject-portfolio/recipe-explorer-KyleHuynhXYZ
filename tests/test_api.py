@@ -36,12 +36,16 @@ def test_create_and_get_recipe(client, clean_storage, sample_recipe_data):
     assert "id" in recipe
     assert "title" in recipe
     assert "created_at" in recipe
+    assert "servings" in recipe
+    assert isinstance(recipe["instructions"], list)
     assert recipe["title"] == sample_recipe_data["title"]
+    assert recipe["servings"] == sample_recipe_data["servings"]
     
     # Get recipe
     get_response = client.get(f"/api/recipes/{recipe['id']}")
     assert get_response.status_code == 200
     assert get_response.json()["id"] == recipe["id"]
+    assert get_response.json()["instructions"] == sample_recipe_data["instructions"]
 
 
 def test_recipe_not_found(client, clean_storage):
