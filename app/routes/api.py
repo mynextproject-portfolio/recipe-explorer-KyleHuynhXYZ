@@ -4,6 +4,7 @@ from typing import List, Optional
 import json
 from app.models import Recipe, RecipeCreate, RecipeUpdate
 from app.services.storage import recipe_storage
+from app.services.themealdb import ExternalAPIError, get_meal_by_id, search_meals
 from app.validators import validate_recipe_create, validate_recipe_update, validate_import_recipes
 from pydantic import ValidationError as PydanticValidationError
 
@@ -25,6 +26,12 @@ def create_error_response(status_code: int, field: str, message: str, details: O
     return response
 
 
+def serialize_recipe(recipe: Recipe, source: str = "internal") -> dict:
+    payload = recipe.model_dump(mode="json")
+    payload["source"] = source
+    return payload
+
+
 @router.get("/recipes")
 def get_recipes(search: Optional[str] = Query(None, max_length=200)):
     """Get all recipes or search by title.
@@ -36,20 +43,38 @@ def get_recipes(search: Optional[str] = Query(None, max_length=200)):
     - 200: List of recipes
     """
     try:
-        if search:
-            recipes = recipe_storage.search_recipes(search)
+        internal_results = []
+        external_results = []
+        external_error = None
+
+        if search and search.strip():
+            internal_results = recipe_storage.search_recipes(search)
+            try:
+                external_results = search_meals(search)
+            except ExternalAPIError as exc:
+                external_error = str(exc)
         else:
-            recipes = recipe_storage.get_all_recipes()
-        
-        return {
-            "recipes": recipes,
-            "count": len(recipes)
+            internal_results = recipe_storage.get_all_recipes()
+
+        response_recipes = [serialize_recipe(recipe) for recipe in internal_results] + external_results
+        result = {
+            "recipes": response_recipes,
+            "count": len(response_recipes)
         }
+        if external_error:
+            result["external_error"] = external_error
+        return result
     except Exception as e:
         raise HTTPException(
             status_code=500,
             detail=create_error_response(500, "internal", f"Failed to retrieve recipes: {str(e)}")
         )
+
+
+@router.get("/recipes/search")
+def search_recipes(q: Optional[str] = Query(None, max_length=200)):
+    """Search recipes using the legacy /recipes/search?q=... route."""
+    return get_recipes(search=q)
 
 
 @router.get("/recipes/export")
@@ -61,7 +86,7 @@ def export_recipes():
     """
     try:
         recipes = recipe_storage.get_all_recipes()
-        recipes_dict = [recipe.model_dump(mode='json') for recipe in recipes]
+        recipes_dict = [serialize_recipe(recipe, source="internal") for recipe in recipes]
         return {
             "recipes": recipes_dict,
             "count": len(recipes_dict),
@@ -71,6 +96,47 @@ def export_recipes():
         raise HTTPException(
             status_code=500,
             detail=create_error_response(500, "internal", f"Export failed: {str(e)}")
+        )
+
+
+@router.get("/recipes/internal/{recipe_id}")
+def get_internal_recipe(recipe_id: str):
+    """Get a specific internal recipe by ID."""
+    if not recipe_id or not recipe_id.strip():
+        raise HTTPException(
+            status_code=400,
+            detail=create_error_response(400, "recipe_id", "Recipe ID cannot be empty")
+        )
+
+    recipe = recipe_storage.get_recipe(recipe_id)
+    if not recipe:
+        raise HTTPException(
+            status_code=404,
+            detail=create_error_response(404, "recipe_id", f"Internal recipe with ID '{recipe_id}' not found")
+        )
+    return serialize_recipe(recipe, source="internal")
+
+
+@router.get("/recipes/external/{recipe_id}")
+def get_external_recipe(recipe_id: str):
+    """Get a specific external recipe by TheMealDB ID."""
+    if not recipe_id or not recipe_id.strip():
+        raise HTTPException(
+            status_code=400,
+            detail=create_error_response(400, "recipe_id", "Recipe ID cannot be empty")
+        )
+    try:
+        recipe = get_meal_by_id(recipe_id)
+        if not recipe:
+            raise HTTPException(
+                status_code=404,
+                detail=create_error_response(404, "recipe_id", f"External recipe with ID '{recipe_id}' not found")
+            )
+        return recipe
+    except ExternalAPIError as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=create_error_response(502, "external_api", str(exc))
         )
 
 
@@ -97,7 +163,7 @@ def get_recipe(recipe_id: str):
             status_code=404,
             detail=create_error_response(404, "recipe_id", f"Recipe with ID '{recipe_id}' not found")
         )
-    return recipe
+    return serialize_recipe(recipe, source="internal")
 
 
 @router.post("/recipes")
@@ -120,7 +186,7 @@ def create_recipe(recipe: RecipeCreate):
     try:
         # Validation is handled by Pydantic models
         new_recipe = recipe_storage.create_recipe(recipe)
-        return new_recipe
+        return serialize_recipe(new_recipe, source="internal")
     except PydanticValidationError as e:
         error_details = []
         for error in e.errors():
@@ -169,7 +235,7 @@ def update_recipe(recipe_id: str, recipe: RecipeUpdate):
             )
         
         updated_recipe = recipe_storage.update_recipe(recipe_id, recipe)
-        return updated_recipe
+        return serialize_recipe(updated_recipe, source="internal")
     except PydanticValidationError as e:
         error_details = []
         for error in e.errors():

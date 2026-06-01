@@ -70,6 +70,7 @@
             <div class="card-body">
                 <h5 class="card-title">Recipe Actions</h5>
                 <div class="d-grid gap-2">
+                    {% if recipe.source != 'external' %}
                     <a href="/recipes/{{ recipe.id }}/edit" class="btn btn-primary">
                         Edit Recipe
                     </a>
@@ -79,6 +80,11 @@
                             Delete Recipe
                         </button>
                     </form>
+                    {% else %}
+                    <div class="alert alert-info mb-0">
+                        External recipes cannot be edited or deleted.
+                    </div>
+                    {% endif %}
                 </div>
             </div>
         </div>
@@ -87,8 +93,13 @@
             <div class="card-body">
                 <h6 class="card-title">Recipe Info</h6>
                 <small class="text-muted">
+                    {% if recipe.created_at is string %}
+                    <div><strong>Created:</strong> {{ recipe.created_at }}</div>
+                    <div><strong>Updated:</strong> {{ recipe.updated_at }}</div>
+                    {% else %}
                     <div><strong>Created:</strong> {{ recipe.created_at.strftime('%B %d, %Y') }}</div>
                     <div><strong>Updated:</strong> {{ recipe.updated_at.strftime('%B %d, %Y') }}</div>
+                    {% endif %}
                     <div><strong>Ingredients:</strong> {{ recipe.ingredients|length }}</div>
                     <div><strong>Servings:</strong> {{ recipe.servings }}</div>
                 </small>
