@@ -123,6 +123,38 @@ def test_search_combines_internal_and_external_results(client, clean_storage, sa
     assert any(recipe["source"] == "external" for recipe in data["recipes"])
 
 
+def test_get_recipes_search_metrics(client, clean_storage, sample_recipe_data, monkeypatch):
+    """Contract test: GET /recipes returns timing metrics for internal and external sources"""
+    sample_data = sample_recipe_data.copy()
+    sample_data["title"] = "Apple Pie"
+    client.post("/api/recipes", json=sample_data)
+
+    external_recipe = {
+        "id": "external-52772",
+        "title": "External Apple Pie",
+        "description": "A tasty external recipe",
+        "cuisine": "American",
+        "ingredients": ["1 Apple", "1 cup sugar"],
+        "instructions": ["Mix ingredients."],
+        "servings": 1,
+        "tags": ["external"],
+        "created_at": "2024-01-01T10:00:00",
+        "updated_at": "2024-01-01T10:00:00",
+        "source": "external"
+    }
+    monkeypatch.setattr("app.routes.api.search_meals", lambda q: [external_recipe])
+
+    response = client.get("/api/recipes?search=Apple")
+    assert response.status_code == 200
+    data = response.json()
+    assert "metrics" in data
+    assert data["metrics"]["internal_ms"] >= 0
+    assert data["metrics"]["external_ms"] >= 0
+    assert data["metrics"]["total_ms"] >= data["metrics"]["internal_ms"]
+    assert data["metrics"]["source_counts"]["internal"] == 1
+    assert data["metrics"]["source_counts"]["external"] == 1
+
+
 def test_search_external_api_failure_returns_internal_results(client, clean_storage, sample_recipe_data, monkeypatch):
     """Contract test: external API failure does not crash combined search"""
     sample_data = sample_recipe_data.copy()
