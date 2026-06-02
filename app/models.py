@@ -193,3 +193,22 @@ class RecipeUpdate(BaseModel):
             if len(tag.strip()) == 0:
                 raise ValueError("Tags cannot be empty strings")
         return v
+
+# --- AUTHENTICATION MODELS ---
+
+class UserBase(BaseModel):
+    username: str = Field(..., min_length=3, max_length=50)
+
+class UserCreate(UserBase):
+    password: str = Field(..., min_length=6)
+
+class UserInDB(UserBase):
+    id: str
+    hashed_password: str
+
+class Token(BaseModel):
+    access_token: str
+    token_type: str
+
+class TokenData(BaseModel):
+    username: Optional[str] = None
