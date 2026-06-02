@@ -5,7 +5,10 @@ import json
 import time
 from app.models import Recipe, RecipeCreate, RecipeUpdate
 from app.services.storage import recipe_storage
-from app.services.themealdb import ExternalAPIError, get_meal_by_id, search_meals
+from app.services import themealdb
+ExternalAPIError = themealdb.ExternalAPIError
+get_meal_by_id = themealdb.get_meal_by_id
+search_meals = themealdb.search_meals
 from app.validators import validate_recipe_create, validate_recipe_update, validate_import_recipes
 from pydantic import ValidationError as PydanticValidationError
 
@@ -78,7 +81,9 @@ def get_recipes(search: Optional[str] = Query(None, max_length=200)):
                 "source_counts": {
                     "internal": len(internal_results),
                     "external": len(external_results)
-                }
+                },
+                "cache_hits": getattr(themealdb, 'cache_hits', 0),
+                "cache_misses": getattr(themealdb, 'cache_misses', 0)
             }
         }
         if external_error:

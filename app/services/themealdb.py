@@ -1,10 +1,17 @@
 from datetime import datetime
 from typing import Any, Dict, List, Optional
+import os
+import json
 
 import httpx
+try:
+    import redis
+except Exception:
+    redis = None
 
 API_BASE_URL = "https://www.themealdb.com/api/json/v1/1"
 TIMEOUT_SECONDS = 5.0
+CACHE_TTL_SECONDS = 24 * 60 * 60  # 24 hours
 
 
 class ExternalAPIError(Exception):
@@ -78,14 +85,57 @@ def _fetch_json(endpoint: str, params: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def search_meals(query: str) -> List[Dict[str, Any]]:
+    # Caching: try Redis first
+    try:
+        client = _get_redis_client()
+    except Exception:
+        client = None
+
+    cache_key = f"meal_search:{query.lower()}"
+    if client:
+        try:
+            raw = client.get(cache_key)
+            if raw:
+                _increment_cache_hit()
+                data = json.loads(raw)
+                return data
+        except Exception:
+            # swallow cache errors and continue to fetch
+            pass
+
     payload = _fetch_json("search.php", {"s": query})
     meals = payload.get("meals")
     if not meals:
-        return []
-    return [_transform_meal(meal) for meal in meals if isinstance(meal, dict)]
+        result = []
+    else:
+        result = [_transform_meal(meal) for meal in meals if isinstance(meal, dict)]
+
+    if client:
+        try:
+            client.setex(cache_key, CACHE_TTL_SECONDS, json.dumps(result))
+            _increment_cache_miss()
+        except Exception:
+            pass
+
+    return result
 
 
 def get_meal_by_id(meal_id: str) -> Optional[Dict[str, Any]]:
+    try:
+        client = _get_redis_client()
+    except Exception:
+        client = None
+
+    cache_key = f"meal_id:{meal_id}"
+    if client:
+        try:
+            raw = client.get(cache_key)
+            if raw:
+                _increment_cache_hit()
+                return json.loads(raw)
+        except Exception:
+            pass
+
     payload = _fetch_json("lookup.php", {"i": meal_id})
     meals = payload.get("meals")
     if not meals:
@@ -93,4 +143,40 @@ def get_meal_by_id(meal_id: str) -> Optional[Dict[str, Any]]:
     first_meal = meals[0]
     if not isinstance(first_meal, dict):
         return None
-    return _transform_meal(first_meal)
+    transformed = _transform_meal(first_meal)
+
+    if client:
+        try:
+            client.setex(cache_key, CACHE_TTL_SECONDS, json.dumps(transformed))
+            _increment_cache_miss()
+        except Exception:
+            pass
+
+    return transformed
+
+
+# Redis client and simple metrics
+_redis_client = None
+cache_hits = 0
+cache_misses = 0
+
+
+def _get_redis_client():
+    global _redis_client
+    if _redis_client:
+        return _redis_client
+    url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+    if redis is None:
+        raise RuntimeError("redis package not available")
+    _redis_client = redis.Redis.from_url(url, decode_responses=True)
+    return _redis_client
+
+
+def _increment_cache_hit():
+    global cache_hits
+    cache_hits += 1
+
+
+def _increment_cache_miss():
+    global cache_misses
+    cache_misses += 1

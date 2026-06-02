@@ -155,6 +155,53 @@ def test_get_recipes_search_metrics(client, clean_storage, sample_recipe_data, m
     assert data["metrics"]["source_counts"]["external"] == 1
 
 
+def test_external_redis_cache_effectiveness(client, clean_storage, monkeypatch):
+    """Verify Redis cache stores external responses and reduces external fetches"""
+    from app.services import themealdb
+
+    # Reset counters
+    themealdb.cache_hits = 0
+    themealdb.cache_misses = 0
+
+    # Fake Redis client backed by dict
+    class FakeRedis:
+        def __init__(self):
+            self.store = {}
+        def get(self, k):
+            return self.store.get(k)
+        def setex(self, k, ttl, v):
+            self.store[k] = v
+
+    fake = FakeRedis()
+
+    # Monkeypatch redis client factory
+    monkeypatch.setattr(themealdb, '_get_redis_client', lambda: fake)
+
+    # Count actual external fetches by monkeypatching _fetch_json
+    calls = {"n": 0}
+
+    def fake_fetch(endpoint, params):
+        calls["n"] += 1
+        # return a payload similar to TheMealDB
+        return {"meals": [{"idMeal": "52772", "strMeal": "External Test", "strInstructions": "Do this.", "strArea": "Test"}]}
+
+    monkeypatch.setattr(themealdb, '_fetch_json', fake_fetch)
+
+    # First request should populate cache (miss)
+    r1 = client.get('/api/recipes?search=ExternalTest')
+    assert r1.status_code == 200
+    d1 = r1.json()
+    assert calls["n"] == 1
+    assert d1["metrics"]["cache_misses"] >= 1
+
+    # Second request should hit cache (no new external fetch)
+    r2 = client.get('/api/recipes?search=ExternalTest')
+    assert r2.status_code == 200
+    d2 = r2.json()
+    assert calls["n"] == 1
+    assert d2["metrics"]["cache_hits"] >= 1
+
+
 def test_search_external_api_failure_returns_internal_results(client, clean_storage, sample_recipe_data, monkeypatch):
     """Contract test: external API failure does not crash combined search"""
     sample_data = sample_recipe_data.copy()
