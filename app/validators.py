@@ -6,7 +6,6 @@ Provides centralized validation functions for recipe data compliance.
 from typing import List, Dict, Any, Tuple
 from app.models import Recipe, RecipeCreate, RecipeUpdate
 from pydantic import ValidationError as PydanticValidationError
-import json
 
 
 def validate_recipe_create(data: Dict[str, Any]) -> Tuple[bool, List[Dict[str, Any]]]:
@@ -20,11 +19,13 @@ def validate_recipe_create(data: Dict[str, Any]) -> Tuple[bool, List[Dict[str, A
         return True, []
     except PydanticValidationError as e:
         for error in e.errors():
-            errors.append({
-                "field": ".".join(str(x) for x in error["loc"]),
-                "message": error["msg"],
-                "type": error["type"]
-            })
+            errors.append(
+                {
+                    "field": ".".join(str(x) for x in error["loc"]),
+                    "message": error["msg"],
+                    "type": error["type"],
+                }
+            )
         return False, errors
 
 
@@ -39,11 +40,13 @@ def validate_recipe_update(data: Dict[str, Any]) -> Tuple[bool, List[Dict[str, A
         return True, []
     except PydanticValidationError as e:
         for error in e.errors():
-            errors.append({
-                "field": ".".join(str(x) for x in error["loc"]),
-                "message": error["msg"],
-                "type": error["type"]
-            })
+            errors.append(
+                {
+                    "field": ".".join(str(x) for x in error["loc"]),
+                    "message": error["msg"],
+                    "type": error["type"],
+                }
+            )
         return False, errors
 
 
@@ -66,11 +69,13 @@ def validate_import_recipes(data: Any) -> Tuple[bool, List[Dict[str, Any]]]:
     valid_recipes = []
     for idx, recipe_data in enumerate(data):
         if not isinstance(recipe_data, dict):
-            errors.append({
-                "field": f"recipes[{idx}]",
-                "message": "Each recipe must be an object",
-                "index": idx
-            })
+            errors.append(
+                {
+                    "field": f"recipes[{idx}]",
+                    "message": "Each recipe must be an object",
+                    "index": idx,
+                }
+            )
             continue
 
         try:
@@ -79,12 +84,14 @@ def validate_import_recipes(data: Any) -> Tuple[bool, List[Dict[str, Any]]]:
             valid_recipes.append(recipe_data)
         except PydanticValidationError as e:
             for error in e.errors():
-                errors.append({
-                    "field": f"recipes[{idx}].{'.'.join(str(x) for x in error['loc'])}",
-                    "message": error["msg"],
-                    "type": error["type"],
-                    "index": idx
-                })
+                errors.append(
+                    {
+                        "field": f"recipes[{idx}].{'.'.join(str(x) for x in error['loc'])}",
+                        "message": error["msg"],
+                        "type": error["type"],
+                        "index": idx,
+                    }
+                )
 
     # If there are any errors, return validation failure
     if errors:
@@ -93,7 +100,9 @@ def validate_import_recipes(data: Any) -> Tuple[bool, List[Dict[str, Any]]]:
     return True, []
 
 
-def validate_schema_compliance(data: Any, schema_type: str = "recipe") -> Tuple[bool, List[Dict[str, Any]]]:
+def validate_schema_compliance(
+    data: Any, schema_type: str = "recipe"
+) -> Tuple[bool, List[Dict[str, Any]]]:
     """
     Generic schema compliance validator.
     schema_type: "recipe", "create", "update", "import"
@@ -105,4 +114,6 @@ def validate_schema_compliance(data: Any, schema_type: str = "recipe") -> Tuple[
     elif schema_type == "import":
         return validate_import_recipes(data)
     else:
-        return False, [{"field": "schema_type", "message": f"Unknown schema type: {schema_type}"}]
+        return False, [
+            {"field": "schema_type", "message": f"Unknown schema type: {schema_type}"}
+        ]

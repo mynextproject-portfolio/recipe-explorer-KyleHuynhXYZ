@@ -9,6 +9,7 @@ from app.services.themealdb import ExternalAPIError
 # SMOKE TESTS
 # ============================================================================
 
+
 def test_health_check(client):
     """Smoke test: API is running and responding"""
     response = client.get("/health")
@@ -27,6 +28,7 @@ def test_home_page_loads(client):
 # GET /recipes ENDPOINT TESTS
 # ============================================================================
 
+
 def test_get_all_recipes(client, clean_storage):
     """Contract test: GET /recipes returns correct structure"""
     response = client.get("/api/recipes")
@@ -42,7 +44,7 @@ def test_get_recipes_with_count(client, clean_storage, sample_recipe_data):
     """Contract test: GET /recipes returns correct count"""
     client.post("/api/recipes", json=sample_recipe_data)
     client.post("/api/recipes", json=sample_recipe_data)
-    
+
     response = client.get("/api/recipes")
     assert response.status_code == 200
     data = response.json()
@@ -55,10 +57,10 @@ def test_get_recipes_search(client, clean_storage, sample_recipe_data):
     sample_data = sample_recipe_data.copy()
     sample_data["title"] = "Pasta Carbonara"
     client.post("/api/recipes", json=sample_data)
-    
+
     sample_data["title"] = "Caesar Salad"
     client.post("/api/recipes", json=sample_data)
-    
+
     response = client.get("/api/recipes?search=Pasta")
     assert response.status_code == 200
     data = response.json()
@@ -83,7 +85,7 @@ def test_get_recipes_search_path_alias(client, clean_storage, sample_recipe_data
 def test_get_recipes_search_empty_query(client, clean_storage, sample_recipe_data):
     """Contract test: GET /recipes with empty search returns all"""
     client.post("/api/recipes", json=sample_recipe_data)
-    
+
     # Empty search is treated as no search parameter
     response = client.get("/api/recipes?search=")
     # FastAPI validates min_length=1 on query parameters, but we removed min_length
@@ -94,7 +96,9 @@ def test_get_recipes_search_empty_query(client, clean_storage, sample_recipe_dat
         assert data["count"] == 1
 
 
-def test_search_combines_internal_and_external_results(client, clean_storage, sample_recipe_data, monkeypatch):
+def test_search_combines_internal_and_external_results(
+    client, clean_storage, sample_recipe_data, monkeypatch
+):
     """Contract test: GET /recipes returns both internal and external search results"""
     sample_data = sample_recipe_data.copy()
     sample_data["title"] = "Apple Pie"
@@ -111,7 +115,7 @@ def test_search_combines_internal_and_external_results(client, clean_storage, sa
         "tags": ["external"],
         "created_at": "2024-01-01T10:00:00",
         "updated_at": "2024-01-01T10:00:00",
-        "source": "external"
+        "source": "external",
     }
     monkeypatch.setattr("app.routes.api.search_meals", lambda q: [external_recipe])
 
@@ -123,7 +127,9 @@ def test_search_combines_internal_and_external_results(client, clean_storage, sa
     assert any(recipe["source"] == "external" for recipe in data["recipes"])
 
 
-def test_get_recipes_search_metrics(client, clean_storage, sample_recipe_data, monkeypatch):
+def test_get_recipes_search_metrics(
+    client, clean_storage, sample_recipe_data, monkeypatch
+):
     """Contract test: GET /recipes returns timing metrics for internal and external sources"""
     sample_data = sample_recipe_data.copy()
     sample_data["title"] = "Apple Pie"
@@ -140,7 +146,7 @@ def test_get_recipes_search_metrics(client, clean_storage, sample_recipe_data, m
         "tags": ["external"],
         "created_at": "2024-01-01T10:00:00",
         "updated_at": "2024-01-01T10:00:00",
-        "source": "external"
+        "source": "external",
     }
     monkeypatch.setattr("app.routes.api.search_meals", lambda q: [external_recipe])
 
@@ -167,15 +173,17 @@ def test_external_redis_cache_effectiveness(client, clean_storage, monkeypatch):
     class FakeRedis:
         def __init__(self):
             self.store = {}
+
         def get(self, k):
             return self.store.get(k)
+
         def setex(self, k, ttl, v):
             self.store[k] = v
 
     fake = FakeRedis()
 
     # Monkeypatch redis client factory
-    monkeypatch.setattr(themealdb, '_get_redis_client', lambda: fake)
+    monkeypatch.setattr(themealdb, "_get_redis_client", lambda: fake)
 
     # Count actual external fetches by monkeypatching _fetch_json
     calls = {"n": 0}
@@ -183,26 +191,37 @@ def test_external_redis_cache_effectiveness(client, clean_storage, monkeypatch):
     def fake_fetch(endpoint, params):
         calls["n"] += 1
         # return a payload similar to TheMealDB
-        return {"meals": [{"idMeal": "52772", "strMeal": "External Test", "strInstructions": "Do this.", "strArea": "Test"}]}
+        return {
+            "meals": [
+                {
+                    "idMeal": "52772",
+                    "strMeal": "External Test",
+                    "strInstructions": "Do this.",
+                    "strArea": "Test",
+                }
+            ]
+        }
 
-    monkeypatch.setattr(themealdb, '_fetch_json', fake_fetch)
+    monkeypatch.setattr(themealdb, "_fetch_json", fake_fetch)
 
     # First request should populate cache (miss)
-    r1 = client.get('/api/recipes?search=ExternalTest')
+    r1 = client.get("/api/recipes?search=ExternalTest")
     assert r1.status_code == 200
     d1 = r1.json()
     assert calls["n"] == 1
     assert d1["metrics"]["cache_misses"] >= 1
 
     # Second request should hit cache (no new external fetch)
-    r2 = client.get('/api/recipes?search=ExternalTest')
+    r2 = client.get("/api/recipes?search=ExternalTest")
     assert r2.status_code == 200
     d2 = r2.json()
     assert calls["n"] == 1
     assert d2["metrics"]["cache_hits"] >= 1
 
 
-def test_search_external_api_failure_returns_internal_results(client, clean_storage, sample_recipe_data, monkeypatch):
+def test_search_external_api_failure_returns_internal_results(
+    client, clean_storage, sample_recipe_data, monkeypatch
+):
     """Contract test: external API failure does not crash combined search"""
     sample_data = sample_recipe_data.copy()
     sample_data["title"] = "Apple Pie"
@@ -221,7 +240,9 @@ def test_search_external_api_failure_returns_internal_results(client, clean_stor
     assert "external_error" in data
 
 
-def test_home_search_shows_external_results(client, clean_storage, sample_recipe_data, monkeypatch):
+def test_home_search_shows_external_results(
+    client, clean_storage, sample_recipe_data, monkeypatch
+):
     """Contract test: homepage search includes external search results"""
     sample_data = sample_recipe_data.copy()
     sample_data["title"] = "Apple Pie"
@@ -238,7 +259,7 @@ def test_home_search_shows_external_results(client, clean_storage, sample_recipe
         "tags": ["external"],
         "created_at": "2024-01-01T10:00:00",
         "updated_at": "2024-01-01T10:00:00",
-        "source": "external"
+        "source": "external",
     }
     monkeypatch.setattr("app.routes.pages.search_meals", lambda q: [external_recipe])
 
@@ -252,11 +273,12 @@ def test_home_search_shows_external_results(client, clean_storage, sample_recipe
 # GET /recipes/{id} ENDPOINT TESTS
 # ============================================================================
 
+
 def test_get_recipe_by_id(client, clean_storage, sample_recipe_data):
     """Contract test: GET /recipes/{id} returns recipe"""
     create_response = client.post("/api/recipes", json=sample_recipe_data)
     recipe_id = create_response.json()["id"]
-    
+
     response = client.get(f"/api/recipes/{recipe_id}")
     assert response.status_code == 200
     recipe = response.json()
@@ -290,9 +312,11 @@ def test_get_external_recipe_by_id(client, clean_storage, monkeypatch):
         "tags": ["external"],
         "created_at": "2024-01-01T10:00:00",
         "updated_at": "2024-01-01T10:00:00",
-        "source": "external"
+        "source": "external",
     }
-    monkeypatch.setattr("app.routes.api.get_meal_by_id", lambda recipe_id: external_recipe)
+    monkeypatch.setattr(
+        "app.routes.api.get_meal_by_id", lambda recipe_id: external_recipe
+    )
 
     response = client.get("/api/recipes/external/52772")
     assert response.status_code == 200
@@ -339,6 +363,7 @@ def test_recipe_empty_id_returns_400(client, clean_storage):
 # POST /recipes ENDPOINT TESTS - VALID DATA
 # ============================================================================
 
+
 def test_create_recipe_valid(client, clean_storage, sample_recipe_data):
     """Contract test: POST /recipes with valid data succeeds"""
     response = client.post("/api/recipes", json=sample_recipe_data)
@@ -359,7 +384,7 @@ def test_create_recipe_with_default_tags(client, clean_storage, sample_recipe_da
     """Contract test: POST /recipes with missing tags uses default"""
     data = sample_recipe_data.copy()
     del data["tags"]
-    
+
     response = client.post("/api/recipes", json=data)
     assert response.status_code == 200
     recipe = response.json()
@@ -370,112 +395,137 @@ def test_create_recipe_with_default_tags(client, clean_storage, sample_recipe_da
 # POST /recipes ENDPOINT TESTS - VALIDATION ERRORS
 # ============================================================================
 
-def test_create_recipe_missing_title_returns_422(client, clean_storage, sample_recipe_data):
+
+def test_create_recipe_missing_title_returns_422(
+    client, clean_storage, sample_recipe_data
+):
     """Contract test: POST /recipes missing title returns 422"""
     data = sample_recipe_data.copy()
     del data["title"]
-    
+
     response = client.post("/api/recipes", json=data)
     assert response.status_code == 422
     # Response wrapped in detail field by FastAPI when validation error
     assert "detail" in response.json()
 
 
-def test_create_recipe_empty_title_returns_422(client, clean_storage, sample_recipe_data):
+def test_create_recipe_empty_title_returns_422(
+    client, clean_storage, sample_recipe_data
+):
     """Contract test: POST /recipes with empty title returns 422"""
     data = sample_recipe_data.copy()
     data["title"] = ""
-    
+
     response = client.post("/api/recipes", json=data)
     assert response.status_code == 422
 
 
-def test_create_recipe_title_too_long_returns_422(client, clean_storage, sample_recipe_data):
+def test_create_recipe_title_too_long_returns_422(
+    client, clean_storage, sample_recipe_data
+):
     """Contract test: POST /recipes with title exceeding max length returns 422"""
     data = sample_recipe_data.copy()
     data["title"] = "x" * 201  # MAX_TITLE_LENGTH is 200
-    
+
     response = client.post("/api/recipes", json=data)
     assert response.status_code == 422
 
 
-def test_create_recipe_missing_description_returns_422(client, clean_storage, sample_recipe_data):
+def test_create_recipe_missing_description_returns_422(
+    client, clean_storage, sample_recipe_data
+):
     """Contract test: POST /recipes missing description returns 422"""
     data = sample_recipe_data.copy()
     del data["description"]
-    
+
     response = client.post("/api/recipes", json=data)
     assert response.status_code == 422
 
 
-def test_create_recipe_empty_ingredients_returns_422(client, clean_storage, sample_recipe_data):
+def test_create_recipe_empty_ingredients_returns_422(
+    client, clean_storage, sample_recipe_data
+):
     """Contract test: POST /recipes with empty ingredients list returns 422"""
     data = sample_recipe_data.copy()
     data["ingredients"] = []
-    
+
     response = client.post("/api/recipes", json=data)
     assert response.status_code == 422
 
 
-def test_create_recipe_empty_instructions_returns_422(client, clean_storage, sample_recipe_data):
+def test_create_recipe_empty_instructions_returns_422(
+    client, clean_storage, sample_recipe_data
+):
     """Contract test: POST /recipes with empty instructions list returns 422"""
     data = sample_recipe_data.copy()
     data["instructions"] = []
-    
+
     response = client.post("/api/recipes", json=data)
     assert response.status_code == 422
 
 
-def test_create_recipe_ingredient_empty_string_returns_422(client, clean_storage, sample_recipe_data):
+def test_create_recipe_ingredient_empty_string_returns_422(
+    client, clean_storage, sample_recipe_data
+):
     """Contract test: POST /recipes with empty ingredient string returns 422"""
     data = sample_recipe_data.copy()
     data["ingredients"] = ["ingredient 1", "", "ingredient 3"]
-    
+
     response = client.post("/api/recipes", json=data)
     assert response.status_code == 422
 
 
-def test_create_recipe_instruction_empty_string_returns_422(client, clean_storage, sample_recipe_data):
+def test_create_recipe_instruction_empty_string_returns_422(
+    client, clean_storage, sample_recipe_data
+):
     """Contract test: POST /recipes with empty instruction string returns 422"""
     data = sample_recipe_data.copy()
     data["instructions"] = ["step 1", "", "step 3"]
-    
+
     response = client.post("/api/recipes", json=data)
     assert response.status_code == 422
 
 
-def test_create_recipe_servings_zero_returns_422(client, clean_storage, sample_recipe_data):
+def test_create_recipe_servings_zero_returns_422(
+    client, clean_storage, sample_recipe_data
+):
     """Contract test: POST /recipes with servings=0 returns 422"""
     data = sample_recipe_data.copy()
     data["servings"] = 0
-    
+
     response = client.post("/api/recipes", json=data)
     assert response.status_code == 422
 
 
-def test_create_recipe_servings_exceeds_max_returns_422(client, clean_storage, sample_recipe_data):
+def test_create_recipe_servings_exceeds_max_returns_422(
+    client, clean_storage, sample_recipe_data
+):
     """Contract test: POST /recipes with servings > 100 returns 422"""
     data = sample_recipe_data.copy()
     data["servings"] = 101
-    
+
     response = client.post("/api/recipes", json=data)
     assert response.status_code == 422
 
 
-def test_create_recipe_ingredients_not_list_returns_422(client, clean_storage, sample_recipe_data):
+def test_create_recipe_ingredients_not_list_returns_422(
+    client, clean_storage, sample_recipe_data
+):
     """Contract test: POST /recipes with non-list ingredients returns 422"""
     data = sample_recipe_data.copy()
     data["ingredients"] = "not a list"
-    
+
     response = client.post("/api/recipes", json=data)
     assert response.status_code == 422
 
 
-def test_create_recipe_instructions_not_list_returns_422(client, clean_storage, sample_recipe_data):
+def test_create_recipe_instructions_not_list_returns_422(
+    client, clean_storage, sample_recipe_data
+):
     """Contract test: POST /recipes with non-list instructions returns 422"""
     data = sample_recipe_data.copy()
     data["instructions"] = "not a list"
-    
+
     response = client.post("/api/recipes", json=data)
     assert response.status_code == 422
 
@@ -484,14 +534,15 @@ def test_create_recipe_instructions_not_list_returns_422(client, clean_storage, 
 # PUT /recipes/{id} ENDPOINT TESTS
 # ============================================================================
 
+
 def test_update_recipe_valid(client, clean_storage, sample_recipe_data):
     """Contract test: PUT /recipes/{id} with valid data succeeds"""
     create_response = client.post("/api/recipes", json=sample_recipe_data)
     recipe_id = create_response.json()["id"]
-    
+
     update_data = sample_recipe_data.copy()
     update_data["title"] = "Updated Title"
-    
+
     response = client.put(f"/api/recipes/{recipe_id}", json=update_data)
     assert response.status_code == 200
     recipe = response.json()
@@ -511,38 +562,44 @@ def test_update_recipe_not_found_returns_404(client, clean_storage, sample_recip
         assert "error" in data
 
 
-def test_update_recipe_missing_title_returns_422(client, clean_storage, sample_recipe_data):
+def test_update_recipe_missing_title_returns_422(
+    client, clean_storage, sample_recipe_data
+):
     """Contract test: PUT /recipes/{id} missing title returns 422"""
     create_response = client.post("/api/recipes", json=sample_recipe_data)
     recipe_id = create_response.json()["id"]
-    
+
     update_data = sample_recipe_data.copy()
     del update_data["title"]
-    
+
     response = client.put(f"/api/recipes/{recipe_id}", json=update_data)
     assert response.status_code == 422
 
 
-def test_update_recipe_title_too_long_returns_422(client, clean_storage, sample_recipe_data):
+def test_update_recipe_title_too_long_returns_422(
+    client, clean_storage, sample_recipe_data
+):
     """Contract test: PUT /recipes/{id} with title too long returns 422"""
     create_response = client.post("/api/recipes", json=sample_recipe_data)
     recipe_id = create_response.json()["id"]
-    
+
     update_data = sample_recipe_data.copy()
     update_data["title"] = "x" * 201
-    
+
     response = client.put(f"/api/recipes/{recipe_id}", json=update_data)
     assert response.status_code == 422
 
 
-def test_update_recipe_empty_ingredients_returns_422(client, clean_storage, sample_recipe_data):
+def test_update_recipe_empty_ingredients_returns_422(
+    client, clean_storage, sample_recipe_data
+):
     """Contract test: PUT /recipes/{id} with empty ingredients returns 422"""
     create_response = client.post("/api/recipes", json=sample_recipe_data)
     recipe_id = create_response.json()["id"]
-    
+
     update_data = sample_recipe_data.copy()
     update_data["ingredients"] = []
-    
+
     response = client.put(f"/api/recipes/{recipe_id}", json=update_data)
     assert response.status_code == 422
 
@@ -551,17 +608,18 @@ def test_update_recipe_empty_ingredients_returns_422(client, clean_storage, samp
 # DELETE /recipes/{id} ENDPOINT TESTS
 # ============================================================================
 
+
 def test_delete_recipe_valid(client, clean_storage, sample_recipe_data):
     """Contract test: DELETE /recipes/{id} succeeds"""
     create_response = client.post("/api/recipes", json=sample_recipe_data)
     recipe_id = create_response.json()["id"]
-    
+
     response = client.delete(f"/api/recipes/{recipe_id}")
     assert response.status_code == 200
     data = response.json()
     assert data["status"] == "success"
     assert "deleted" in data["message"].lower()
-    
+
     # Verify recipe is deleted
     get_response = client.get(f"/api/recipes/{recipe_id}")
     assert get_response.status_code == 404
@@ -583,9 +641,11 @@ def test_delete_recipe_not_found_returns_404(client, clean_storage):
 # POST /recipes/import ENDPOINT TESTS
 # ============================================================================
 
+
 def test_import_recipes_valid_json(client, clean_storage):
     """Contract test: POST /recipes/import with valid JSON succeeds"""
     import json as json_lib
+
     recipes_data = [
         {
             "id": "recipe-1",
@@ -597,13 +657,15 @@ def test_import_recipes_valid_json(client, clean_storage):
             "servings": 2,
             "tags": [],
             "created_at": "2024-01-01T10:00:00",
-            "updated_at": "2024-01-01T10:00:00"
+            "updated_at": "2024-01-01T10:00:00",
         }
     ]
-    
+
     response = client.post(
         "/api/recipes/import",
-        files={"file": ("recipes.json", json_lib.dumps(recipes_data), "application/json")}
+        files={
+            "file": ("recipes.json", json_lib.dumps(recipes_data), "application/json")
+        },
     )
     assert response.status_code == 200
     data = response.json()
@@ -614,8 +676,7 @@ def test_import_recipes_valid_json(client, clean_storage):
 def test_import_recipes_empty_file_returns_400(client, clean_storage):
     """Contract test: POST /recipes/import with empty file returns 400"""
     response = client.post(
-        "/api/recipes/import",
-        files={"file": ("recipes.json", "", "application/json")}
+        "/api/recipes/import", files={"file": ("recipes.json", "", "application/json")}
     )
     assert response.status_code == 400
     # Check response structure
@@ -626,8 +687,7 @@ def test_import_recipes_empty_file_returns_400(client, clean_storage):
 def test_import_recipes_non_json_file_returns_400(client, clean_storage):
     """Contract test: POST /recipes/import with non-JSON file returns 400"""
     response = client.post(
-        "/api/recipes/import",
-        files={"file": ("recipes.txt", "not json", "text/plain")}
+        "/api/recipes/import", files={"file": ("recipes.txt", "not json", "text/plain")}
     )
     assert response.status_code == 400
     data = response.json()
@@ -638,7 +698,7 @@ def test_import_recipes_invalid_json_returns_400(client, clean_storage):
     """Contract test: POST /recipes/import with invalid JSON returns 400"""
     response = client.post(
         "/api/recipes/import",
-        files={"file": ("recipes.json", "{invalid json", "application/json")}
+        files={"file": ("recipes.json", "{invalid json", "application/json")},
     )
     assert response.status_code == 400
     data = response.json()
@@ -648,9 +708,16 @@ def test_import_recipes_invalid_json_returns_400(client, clean_storage):
 def test_import_recipes_not_array_returns_422(client, clean_storage):
     """Contract test: POST /recipes/import with non-array JSON returns 422"""
     import json as json_lib
+
     response = client.post(
         "/api/recipes/import",
-        files={"file": ("recipes.json", json_lib.dumps({"recipes": []}), "application/json")}
+        files={
+            "file": (
+                "recipes.json",
+                json_lib.dumps({"recipes": []}),
+                "application/json",
+            )
+        },
     )
     assert response.status_code == 422
     data = response.json()
@@ -660,9 +727,10 @@ def test_import_recipes_not_array_returns_422(client, clean_storage):
 def test_import_recipes_empty_array_returns_422(client, clean_storage):
     """Contract test: POST /recipes/import with empty array returns 422"""
     import json as json_lib
+
     response = client.post(
         "/api/recipes/import",
-        files={"file": ("recipes.json", json_lib.dumps([]), "application/json")}
+        files={"file": ("recipes.json", json_lib.dumps([]), "application/json")},
     )
     assert response.status_code == 422
     data = response.json()
@@ -672,17 +740,20 @@ def test_import_recipes_empty_array_returns_422(client, clean_storage):
 def test_import_recipes_invalid_schema_returns_422(client, clean_storage):
     """Contract test: POST /recipes/import with invalid recipe schema returns 422"""
     import json as json_lib
+
     recipes_data = [
         {
             "id": "recipe-1",
-            "title": "Recipe 1"
+            "title": "Recipe 1",
             # Missing required fields
         }
     ]
-    
+
     response = client.post(
         "/api/recipes/import",
-        files={"file": ("recipes.json", json_lib.dumps(recipes_data), "application/json")}
+        files={
+            "file": ("recipes.json", json_lib.dumps(recipes_data), "application/json")
+        },
     )
     assert response.status_code == 422
     data = response.json()
@@ -691,13 +762,13 @@ def test_import_recipes_invalid_schema_returns_422(client, clean_storage):
 
 def test_import_recipes_file_too_large_returns_400(client, clean_storage):
     """Contract test: POST /recipes/import with file > 1MB returns 400"""
-    import json as json_lib
+
     # Create a large payload
     large_data = "x" * (1_000_001)  # 1MB + 1 byte
-    
+
     response = client.post(
         "/api/recipes/import",
-        files={"file": ("recipes.json", large_data, "application/json")}
+        files={"file": ("recipes.json", large_data, "application/json")},
     )
     assert response.status_code == 400
     data = response.json()
@@ -707,6 +778,7 @@ def test_import_recipes_file_too_large_returns_400(client, clean_storage):
 # ============================================================================
 # GET /recipes/export ENDPOINT TESTS
 # ============================================================================
+
 
 def test_export_recipes_empty(client, clean_storage):
     """Contract test: GET /recipes/export with no recipes"""
@@ -721,7 +793,7 @@ def test_export_recipes_empty(client, clean_storage):
 def test_export_recipes_with_data(client, clean_storage, sample_recipe_data):
     """Contract test: GET /recipes/export returns all recipes"""
     client.post("/api/recipes", json=sample_recipe_data)
-    
+
     response = client.get("/api/recipes/export")
     assert response.status_code == 200
     data = response.json()
@@ -734,20 +806,21 @@ def test_export_recipes_with_data(client, clean_storage, sample_recipe_data):
 # HTML PAGE TESTS
 # ============================================================================
 
+
 def test_recipe_pages_load(client, clean_storage, sample_recipe_data):
     """Smoke test: Recipe HTML pages load without error"""
     # Create a recipe first
     create_response = client.post("/api/recipes", json=sample_recipe_data)
     recipe_id = create_response.json()["id"]
-    
+
     # Test recipe detail page
     response = client.get(f"/recipes/{recipe_id}")
     assert response.status_code == 200
-    
+
     # Test new recipe form
     response = client.get("/recipes/new")
     assert response.status_code == 200
-    
+
     # Test import page
     response = client.get("/import")
     assert response.status_code == 200

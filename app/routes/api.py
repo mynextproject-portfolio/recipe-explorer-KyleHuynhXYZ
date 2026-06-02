@@ -1,16 +1,18 @@
 from fastapi import APIRouter, HTTPException, UploadFile, File, Query
-from fastapi.responses import JSONResponse
 from typing import List, Optional
 import json
 import time
 from app.models import Recipe, RecipeCreate, RecipeUpdate
 from app.services.storage import recipe_storage
 from app.services import themealdb
+from app.validators import (
+    validate_import_recipes,
+)
+from pydantic import ValidationError as PydanticValidationError
+
 ExternalAPIError = themealdb.ExternalAPIError
 get_meal_by_id = themealdb.get_meal_by_id
 search_meals = themealdb.search_meals
-from app.validators import validate_recipe_create, validate_recipe_update, validate_import_recipes
-from pydantic import ValidationError as PydanticValidationError
 
 router = APIRouter(prefix="/api")
 
@@ -18,13 +20,11 @@ router = APIRouter(prefix="/api")
 MAX_FILE_SIZE = 1_000_000  # 1MB
 
 
-def create_error_response(status_code: int, field: str, message: str, details: Optional[List[dict]] = None) -> dict:
+def create_error_response(
+    status_code: int, field: str, message: str, details: Optional[List[dict]] = None
+) -> dict:
     """Create a standardized error response."""
-    response = {
-        "error": message,
-        "field": field,
-        "status_code": status_code
-    }
+    response = {"error": message, "field": field, "status_code": status_code}
     if details:
         response["details"] = details
     return response
@@ -39,10 +39,10 @@ def serialize_recipe(recipe: Recipe, source: str = "internal") -> dict:
 @router.get("/recipes")
 def get_recipes(search: Optional[str] = Query(None, max_length=200)):
     """Get all recipes or search by title.
-    
+
     Query Parameters:
     - search: Optional search string to filter recipes by title
-    
+
     Returns:
     - 200: List of recipes
     """
@@ -70,21 +70,25 @@ def get_recipes(search: Optional[str] = Query(None, max_length=200)):
             finally:
                 external_time_ms = (time.monotonic() - external_start) * 1000
 
-        response_recipes = [serialize_recipe(recipe) for recipe in internal_results] + external_results
+        response_recipes = [
+            serialize_recipe(recipe) for recipe in internal_results
+        ] + external_results
         result = {
             "recipes": response_recipes,
             "count": len(response_recipes),
             "metrics": {
                 "internal_ms": round(internal_time_ms, 2),
-                "external_ms": round(external_time_ms, 2) if external_time_ms is not None else None,
+                "external_ms": round(external_time_ms, 2)
+                if external_time_ms is not None
+                else None,
                 "total_ms": round((time.monotonic() - request_start) * 1000, 2),
                 "source_counts": {
                     "internal": len(internal_results),
-                    "external": len(external_results)
+                    "external": len(external_results),
                 },
-                "cache_hits": getattr(themealdb, 'cache_hits', 0),
-                "cache_misses": getattr(themealdb, 'cache_misses', 0)
-            }
+                "cache_hits": getattr(themealdb, "cache_hits", 0),
+                "cache_misses": getattr(themealdb, "cache_misses", 0),
+            },
         }
         if external_error:
             result["external_error"] = external_error
@@ -92,7 +96,9 @@ def get_recipes(search: Optional[str] = Query(None, max_length=200)):
     except Exception as e:
         raise HTTPException(
             status_code=500,
-            detail=create_error_response(500, "internal", f"Failed to retrieve recipes: {str(e)}")
+            detail=create_error_response(
+                500, "internal", f"Failed to retrieve recipes: {str(e)}"
+            ),
         )
 
 
@@ -105,22 +111,24 @@ def search_recipes(q: Optional[str] = Query(None, max_length=200)):
 @router.get("/recipes/export")
 def export_recipes():
     """Export all recipes as JSON.
-    
+
     Returns:
     - 200: JSON array of all recipes
     """
     try:
         recipes = recipe_storage.get_all_recipes()
-        recipes_dict = [serialize_recipe(recipe, source="internal") for recipe in recipes]
+        recipes_dict = [
+            serialize_recipe(recipe, source="internal") for recipe in recipes
+        ]
         return {
             "recipes": recipes_dict,
             "count": len(recipes_dict),
-            "status": "success"
+            "status": "success",
         }
     except Exception as e:
         raise HTTPException(
             status_code=500,
-            detail=create_error_response(500, "internal", f"Export failed: {str(e)}")
+            detail=create_error_response(500, "internal", f"Export failed: {str(e)}"),
         )
 
 
@@ -130,14 +138,16 @@ def get_internal_recipe(recipe_id: str):
     if not recipe_id or not recipe_id.strip():
         raise HTTPException(
             status_code=400,
-            detail=create_error_response(400, "recipe_id", "Recipe ID cannot be empty")
+            detail=create_error_response(400, "recipe_id", "Recipe ID cannot be empty"),
         )
 
     recipe = recipe_storage.get_recipe(recipe_id)
     if not recipe:
         raise HTTPException(
             status_code=404,
-            detail=create_error_response(404, "recipe_id", f"Internal recipe with ID '{recipe_id}' not found")
+            detail=create_error_response(
+                404, "recipe_id", f"Internal recipe with ID '{recipe_id}' not found"
+            ),
         )
     return serialize_recipe(recipe, source="internal")
 
@@ -148,30 +158,31 @@ def get_external_recipe(recipe_id: str):
     if not recipe_id or not recipe_id.strip():
         raise HTTPException(
             status_code=400,
-            detail=create_error_response(400, "recipe_id", "Recipe ID cannot be empty")
+            detail=create_error_response(400, "recipe_id", "Recipe ID cannot be empty"),
         )
     try:
         recipe = get_meal_by_id(recipe_id)
         if not recipe:
             raise HTTPException(
                 status_code=404,
-                detail=create_error_response(404, "recipe_id", f"External recipe with ID '{recipe_id}' not found")
+                detail=create_error_response(
+                    404, "recipe_id", f"External recipe with ID '{recipe_id}' not found"
+                ),
             )
         return recipe
     except ExternalAPIError as exc:
         raise HTTPException(
-            status_code=502,
-            detail=create_error_response(502, "external_api", str(exc))
+            status_code=502, detail=create_error_response(502, "external_api", str(exc))
         )
 
 
 @router.get("/recipes/{recipe_id}")
 def get_recipe(recipe_id: str):
     """Get a specific recipe by ID.
-    
+
     Path Parameters:
     - recipe_id: The unique identifier of the recipe
-    
+
     Returns:
     - 200: Recipe object
     - 404: Recipe not found
@@ -179,14 +190,16 @@ def get_recipe(recipe_id: str):
     if not recipe_id or not recipe_id.strip():
         raise HTTPException(
             status_code=400,
-            detail=create_error_response(400, "recipe_id", "Recipe ID cannot be empty")
+            detail=create_error_response(400, "recipe_id", "Recipe ID cannot be empty"),
         )
-    
+
     recipe = recipe_storage.get_recipe(recipe_id)
     if not recipe:
         raise HTTPException(
             status_code=404,
-            detail=create_error_response(404, "recipe_id", f"Recipe with ID '{recipe_id}' not found")
+            detail=create_error_response(
+                404, "recipe_id", f"Recipe with ID '{recipe_id}' not found"
+            ),
         )
     return serialize_recipe(recipe, source="internal")
 
@@ -194,7 +207,7 @@ def get_recipe(recipe_id: str):
 @router.post("/recipes")
 def create_recipe(recipe: RecipeCreate):
     """Create a new recipe.
-    
+
     Request Body:
     - title: Recipe title (1-200 chars)
     - description: Recipe description (1-2000 chars)
@@ -203,7 +216,7 @@ def create_recipe(recipe: RecipeCreate):
     - instructions: List of instructions (1-100 items, each 1-1000 chars)
     - servings: Number of servings (1-100)
     - tags: List of tags (0-20 items)
-    
+
     Returns:
     - 201: Created recipe with ID
     - 422: Validation error
@@ -215,31 +228,37 @@ def create_recipe(recipe: RecipeCreate):
     except PydanticValidationError as e:
         error_details = []
         for error in e.errors():
-            error_details.append({
-                "field": ".".join(str(x) for x in error["loc"]),
-                "message": error["msg"],
-                "type": error["type"]
-            })
+            error_details.append(
+                {
+                    "field": ".".join(str(x) for x in error["loc"]),
+                    "message": error["msg"],
+                    "type": error["type"],
+                }
+            )
         raise HTTPException(
             status_code=422,
-            detail=create_error_response(422, "validation", "Recipe data validation failed", error_details)
+            detail=create_error_response(
+                422, "validation", "Recipe data validation failed", error_details
+            ),
         )
     except Exception as e:
         raise HTTPException(
             status_code=500,
-            detail=create_error_response(500, "internal", f"Failed to create recipe: {str(e)}")
+            detail=create_error_response(
+                500, "internal", f"Failed to create recipe: {str(e)}"
+            ),
         )
 
 
 @router.put("/recipes/{recipe_id}")
 def update_recipe(recipe_id: str, recipe: RecipeUpdate):
     """Update an existing recipe.
-    
+
     Path Parameters:
     - recipe_id: The unique identifier of the recipe to update
-    
+
     Request Body: Same schema as POST /recipes
-    
+
     Returns:
     - 200: Updated recipe
     - 404: Recipe not found
@@ -248,47 +267,55 @@ def update_recipe(recipe_id: str, recipe: RecipeUpdate):
     if not recipe_id or not recipe_id.strip():
         raise HTTPException(
             status_code=400,
-            detail=create_error_response(400, "recipe_id", "Recipe ID cannot be empty")
+            detail=create_error_response(400, "recipe_id", "Recipe ID cannot be empty"),
         )
-    
+
     try:
         existing_recipe = recipe_storage.get_recipe(recipe_id)
         if not existing_recipe:
             raise HTTPException(
                 status_code=404,
-                detail=create_error_response(404, "recipe_id", f"Recipe with ID '{recipe_id}' not found")
+                detail=create_error_response(
+                    404, "recipe_id", f"Recipe with ID '{recipe_id}' not found"
+                ),
             )
-        
+
         updated_recipe = recipe_storage.update_recipe(recipe_id, recipe)
         return serialize_recipe(updated_recipe, source="internal")
     except PydanticValidationError as e:
         error_details = []
         for error in e.errors():
-            error_details.append({
-                "field": ".".join(str(x) for x in error["loc"]),
-                "message": error["msg"],
-                "type": error["type"]
-            })
+            error_details.append(
+                {
+                    "field": ".".join(str(x) for x in error["loc"]),
+                    "message": error["msg"],
+                    "type": error["type"],
+                }
+            )
         raise HTTPException(
             status_code=422,
-            detail=create_error_response(422, "validation", "Recipe data validation failed", error_details)
+            detail=create_error_response(
+                422, "validation", "Recipe data validation failed", error_details
+            ),
         )
     except HTTPException:
         raise
     except Exception as e:
         raise HTTPException(
             status_code=500,
-            detail=create_error_response(500, "internal", f"Failed to update recipe: {str(e)}")
+            detail=create_error_response(
+                500, "internal", f"Failed to update recipe: {str(e)}"
+            ),
         )
 
 
 @router.delete("/recipes/{recipe_id}")
 def delete_recipe(recipe_id: str):
     """Delete a recipe.
-    
+
     Path Parameters:
     - recipe_id: The unique identifier of the recipe to delete
-    
+
     Returns:
     - 200: Deletion success message
     - 404: Recipe not found
@@ -296,31 +323,33 @@ def delete_recipe(recipe_id: str):
     if not recipe_id or not recipe_id.strip():
         raise HTTPException(
             status_code=400,
-            detail=create_error_response(400, "recipe_id", "Recipe ID cannot be empty")
+            detail=create_error_response(400, "recipe_id", "Recipe ID cannot be empty"),
         )
-    
+
     success = recipe_storage.delete_recipe(recipe_id)
     if not success:
         raise HTTPException(
             status_code=404,
-            detail=create_error_response(404, "recipe_id", f"Recipe with ID '{recipe_id}' not found")
+            detail=create_error_response(
+                404, "recipe_id", f"Recipe with ID '{recipe_id}' not found"
+            ),
         )
-    
+
     return {
         "message": "Recipe deleted successfully",
         "recipe_id": recipe_id,
-        "status": "success"
+        "status": "success",
     }
 
 
 @router.post("/recipes/import")
 async def import_recipes(file: UploadFile = File(...)):
     """Import recipes from a JSON file.
-    
+
     File Format:
     - Must be JSON array of recipe objects
     - Each recipe must conform to Recipe schema
-    
+
     Returns:
     - 200: Import success with count
     - 400: Invalid file format or size
@@ -329,51 +358,55 @@ async def import_recipes(file: UploadFile = File(...)):
     if not file:
         raise HTTPException(
             status_code=400,
-            detail=create_error_response(400, "file", "No file provided")
+            detail=create_error_response(400, "file", "No file provided"),
         )
-    
+
     # Validate file name
     if not file.filename:
         raise HTTPException(
             status_code=400,
-            detail=create_error_response(400, "filename", "File must have a name")
+            detail=create_error_response(400, "filename", "File must have a name"),
         )
-    
-    if not file.filename.lower().endswith('.json'):
+
+    if not file.filename.lower().endswith(".json"):
         raise HTTPException(
             status_code=400,
-            detail=create_error_response(400, "filename", "File must be a JSON file (.json)")
+            detail=create_error_response(
+                400, "filename", "File must be a JSON file (.json)"
+            ),
         )
-    
+
     try:
         # Read and validate file size
         content = await file.read()
-        
+
         if len(content) == 0:
             raise HTTPException(
                 status_code=400,
-                detail=create_error_response(400, "file_content", "File is empty")
+                detail=create_error_response(400, "file_content", "File is empty"),
             )
-        
+
         if len(content) > MAX_FILE_SIZE:
             raise HTTPException(
                 status_code=400,
                 detail=create_error_response(
                     400,
                     "file_size",
-                    f"File too large. Maximum size is {MAX_FILE_SIZE / 1_000_000}MB"
-                )
+                    f"File too large. Maximum size is {MAX_FILE_SIZE / 1_000_000}MB",
+                ),
             )
-        
+
         # Parse JSON
         try:
             recipes_data = json.loads(content)
         except json.JSONDecodeError as e:
             raise HTTPException(
                 status_code=400,
-                detail=create_error_response(400, "json_format", f"Invalid JSON format: {str(e)}")
+                detail=create_error_response(
+                    400, "json_format", f"Invalid JSON format: {str(e)}"
+                ),
             )
-        
+
         # Validate schema compliance
         is_valid, validation_errors = validate_import_recipes(recipes_data)
         if not is_valid:
@@ -383,24 +416,24 @@ async def import_recipes(file: UploadFile = File(...)):
                     422,
                     "schema_validation",
                     "One or more recipes failed schema validation",
-                    validation_errors[:10]  # Return first 10 errors
-                )
+                    validation_errors[:10],  # Return first 10 errors
+                ),
             )
-        
+
         # Import recipes
         count = recipe_storage.import_recipes(recipes_data)
-        
+
         return {
             "message": f"Successfully imported {count} recipes from {file.filename}",
             "count": count,
             "filename": file.filename,
-            "status": "success"
+            "status": "success",
         }
-    
+
     except HTTPException:
         raise
     except Exception as e:
         raise HTTPException(
             status_code=500,
-            detail=create_error_response(500, "internal", f"Import failed: {str(e)}")
+            detail=create_error_response(500, "internal", f"Import failed: {str(e)}"),
         )
