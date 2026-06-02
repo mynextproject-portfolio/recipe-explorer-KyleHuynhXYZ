@@ -1,18 +1,14 @@
-from fastapi import APIRouter, HTTPException, UploadFile, File, Query
-from typing import List, Optional
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Query
+from typing import Any, List, Optional
 import json
 import time
-from app.models import Recipe, RecipeCreate, RecipeUpdate
-from app.services.storage import recipe_storage
-from app.services import themealdb
-from app.validators import (
-    validate_import_recipes,
-)
-from pydantic import ValidationError as PydanticValidationError
 
-ExternalAPIError = themealdb.ExternalAPIError
-get_meal_by_id = themealdb.get_meal_by_id
-search_meals = themealdb.search_meals
+from app.models import Recipe, RecipeCreate, RecipeUpdate
+from app.deps import get_storage, get_external_client
+from app.protocols import ExternalClientProtocol
+from app.services.themealdb import ExternalAPIError
+from app.validators import validate_import_recipes
+from pydantic import ValidationError as PydanticValidationError
 
 router = APIRouter(prefix="/api")
 
@@ -37,7 +33,11 @@ def serialize_recipe(recipe: Recipe, source: str = "internal") -> dict:
 
 
 @router.get("/recipes")
-def get_recipes(search: Optional[str] = Query(None, max_length=200)):
+def get_recipes(
+    search: Optional[str] = Query(None, max_length=200),
+    storage: Any = Depends(get_storage),
+    external_client: ExternalClientProtocol = Depends(get_external_client),
+):
     """Get all recipes or search by title.
 
     Query Parameters:
@@ -56,15 +56,15 @@ def get_recipes(search: Optional[str] = Query(None, max_length=200)):
 
         internal_start = time.monotonic()
         if search and search.strip():
-            internal_results = recipe_storage.search_recipes(search)
+            internal_results = storage.search_recipes(search)
         else:
-            internal_results = recipe_storage.get_all_recipes()
+            internal_results = storage.get_all_recipes()
         internal_time_ms = (time.monotonic() - internal_start) * 1000
 
         if search and search.strip():
             external_start = time.monotonic()
             try:
-                external_results = search_meals(search)
+                external_results = external_client.search_meals(search)
             except ExternalAPIError as exc:
                 external_error = str(exc)
             finally:
@@ -86,8 +86,8 @@ def get_recipes(search: Optional[str] = Query(None, max_length=200)):
                     "internal": len(internal_results),
                     "external": len(external_results),
                 },
-                "cache_hits": getattr(themealdb, "cache_hits", 0),
-                "cache_misses": getattr(themealdb, "cache_misses", 0),
+                "cache_hits": getattr(external_client, "cache_hits", 0),
+                "cache_misses": getattr(external_client, "cache_misses", 0),
             },
         }
         if external_error:
@@ -103,20 +103,24 @@ def get_recipes(search: Optional[str] = Query(None, max_length=200)):
 
 
 @router.get("/recipes/search")
-def search_recipes(q: Optional[str] = Query(None, max_length=200)):
+def search_recipes(
+    q: Optional[str] = Query(None, max_length=200),
+    storage: Any = Depends(get_storage),
+    external_client: ExternalClientProtocol = Depends(get_external_client),
+):
     """Search recipes using the legacy /recipes/search?q=... route."""
-    return get_recipes(search=q)
+    return get_recipes(search=q, storage=storage, external_client=external_client)
 
 
 @router.get("/recipes/export")
-def export_recipes():
+def export_recipes(storage: Any = Depends(get_storage)):
     """Export all recipes as JSON.
 
     Returns:
     - 200: JSON array of all recipes
     """
     try:
-        recipes = recipe_storage.get_all_recipes()
+        recipes = storage.get_all_recipes()
         recipes_dict = [
             serialize_recipe(recipe, source="internal") for recipe in recipes
         ]
@@ -133,7 +137,7 @@ def export_recipes():
 
 
 @router.get("/recipes/internal/{recipe_id}")
-def get_internal_recipe(recipe_id: str):
+def get_internal_recipe(recipe_id: str, storage: Any = Depends(get_storage)):
     """Get a specific internal recipe by ID."""
     if not recipe_id or not recipe_id.strip():
         raise HTTPException(
@@ -141,7 +145,7 @@ def get_internal_recipe(recipe_id: str):
             detail=create_error_response(400, "recipe_id", "Recipe ID cannot be empty"),
         )
 
-    recipe = recipe_storage.get_recipe(recipe_id)
+    recipe = storage.get_recipe(recipe_id)
     if not recipe:
         raise HTTPException(
             status_code=404,
@@ -153,7 +157,7 @@ def get_internal_recipe(recipe_id: str):
 
 
 @router.get("/recipes/external/{recipe_id}")
-def get_external_recipe(recipe_id: str):
+def get_external_recipe(recipe_id: str, external_client: Any = Depends(get_external_client)):
     """Get a specific external recipe by TheMealDB ID."""
     if not recipe_id or not recipe_id.strip():
         raise HTTPException(
@@ -161,7 +165,7 @@ def get_external_recipe(recipe_id: str):
             detail=create_error_response(400, "recipe_id", "Recipe ID cannot be empty"),
         )
     try:
-        recipe = get_meal_by_id(recipe_id)
+        recipe = external_client.get_meal_by_id(recipe_id)
         if not recipe:
             raise HTTPException(
                 status_code=404,
@@ -177,7 +181,7 @@ def get_external_recipe(recipe_id: str):
 
 
 @router.get("/recipes/{recipe_id}")
-def get_recipe(recipe_id: str):
+def get_recipe(recipe_id: str, storage: Any = Depends(get_storage)):
     """Get a specific recipe by ID.
 
     Path Parameters:
@@ -193,7 +197,7 @@ def get_recipe(recipe_id: str):
             detail=create_error_response(400, "recipe_id", "Recipe ID cannot be empty"),
         )
 
-    recipe = recipe_storage.get_recipe(recipe_id)
+    recipe = storage.get_recipe(recipe_id)
     if not recipe:
         raise HTTPException(
             status_code=404,
@@ -205,7 +209,7 @@ def get_recipe(recipe_id: str):
 
 
 @router.post("/recipes")
-def create_recipe(recipe: RecipeCreate):
+def create_recipe(recipe: RecipeCreate, storage: Any = Depends(get_storage)):
     """Create a new recipe.
 
     Request Body:
@@ -223,7 +227,7 @@ def create_recipe(recipe: RecipeCreate):
     """
     try:
         # Validation is handled by Pydantic models
-        new_recipe = recipe_storage.create_recipe(recipe)
+        new_recipe = storage.create_recipe(recipe)
         return serialize_recipe(new_recipe, source="internal")
     except PydanticValidationError as e:
         error_details = []
@@ -251,7 +255,7 @@ def create_recipe(recipe: RecipeCreate):
 
 
 @router.put("/recipes/{recipe_id}")
-def update_recipe(recipe_id: str, recipe: RecipeUpdate):
+def update_recipe(recipe_id: str, recipe: RecipeUpdate, storage: Any = Depends(get_storage)):
     """Update an existing recipe.
 
     Path Parameters:
@@ -271,7 +275,7 @@ def update_recipe(recipe_id: str, recipe: RecipeUpdate):
         )
 
     try:
-        existing_recipe = recipe_storage.get_recipe(recipe_id)
+        existing_recipe = storage.get_recipe(recipe_id)
         if not existing_recipe:
             raise HTTPException(
                 status_code=404,
@@ -280,7 +284,7 @@ def update_recipe(recipe_id: str, recipe: RecipeUpdate):
                 ),
             )
 
-        updated_recipe = recipe_storage.update_recipe(recipe_id, recipe)
+        updated_recipe = storage.update_recipe(recipe_id, recipe)
         return serialize_recipe(updated_recipe, source="internal")
     except PydanticValidationError as e:
         error_details = []
@@ -310,7 +314,7 @@ def update_recipe(recipe_id: str, recipe: RecipeUpdate):
 
 
 @router.delete("/recipes/{recipe_id}")
-def delete_recipe(recipe_id: str):
+def delete_recipe(recipe_id: str, storage: Any = Depends(get_storage)):
     """Delete a recipe.
 
     Path Parameters:
@@ -326,7 +330,7 @@ def delete_recipe(recipe_id: str):
             detail=create_error_response(400, "recipe_id", "Recipe ID cannot be empty"),
         )
 
-    success = recipe_storage.delete_recipe(recipe_id)
+    success = storage.delete_recipe(recipe_id)
     if not success:
         raise HTTPException(
             status_code=404,
@@ -343,7 +347,7 @@ def delete_recipe(recipe_id: str):
 
 
 @router.post("/recipes/import")
-async def import_recipes(file: UploadFile = File(...)):
+async def import_recipes(file: UploadFile = File(...), storage: Any = Depends(get_storage)):
     """Import recipes from a JSON file.
 
     File Format:
@@ -421,7 +425,7 @@ async def import_recipes(file: UploadFile = File(...)):
             )
 
         # Import recipes
-        count = recipe_storage.import_recipes(recipes_data)
+        count = storage.import_recipes(recipes_data)
 
         return {
             "message": f"Successfully imported {count} recipes from {file.filename}",

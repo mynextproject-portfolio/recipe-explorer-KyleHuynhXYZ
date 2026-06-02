@@ -97,7 +97,7 @@ def test_get_recipes_search_empty_query(client, clean_storage, sample_recipe_dat
 
 
 def test_search_combines_internal_and_external_results(
-    client, clean_storage, sample_recipe_data, monkeypatch
+    client, clean_storage, sample_recipe_data, override_external_client
 ):
     """Contract test: GET /recipes returns both internal and external search results"""
     sample_data = sample_recipe_data.copy()
@@ -117,7 +117,7 @@ def test_search_combines_internal_and_external_results(
         "updated_at": "2024-01-01T10:00:00",
         "source": "external",
     }
-    monkeypatch.setattr("app.routes.api.search_meals", lambda q: [external_recipe])
+    override_external_client.search_results = [external_recipe]
 
     response = client.get("/api/recipes?search=Apple")
     assert response.status_code == 200
@@ -128,7 +128,7 @@ def test_search_combines_internal_and_external_results(
 
 
 def test_get_recipes_search_metrics(
-    client, clean_storage, sample_recipe_data, monkeypatch
+    client, clean_storage, sample_recipe_data, override_external_client
 ):
     """Contract test: GET /recipes returns timing metrics for internal and external sources"""
     sample_data = sample_recipe_data.copy()
@@ -148,7 +148,7 @@ def test_get_recipes_search_metrics(
         "updated_at": "2024-01-01T10:00:00",
         "source": "external",
     }
-    monkeypatch.setattr("app.routes.api.search_meals", lambda q: [external_recipe])
+    override_external_client.search_results = [external_recipe]
 
     response = client.get("/api/recipes?search=Apple")
     assert response.status_code == 200
@@ -220,7 +220,7 @@ def test_external_redis_cache_effectiveness(client, clean_storage, monkeypatch):
 
 
 def test_search_external_api_failure_returns_internal_results(
-    client, clean_storage, sample_recipe_data, monkeypatch
+    client, clean_storage, sample_recipe_data, override_external_client
 ):
     """Contract test: external API failure does not crash combined search"""
     sample_data = sample_recipe_data.copy()
@@ -230,7 +230,8 @@ def test_search_external_api_failure_returns_internal_results(
     def raise_error(_):
         raise ExternalAPIError("TheMealDB service is unavailable")
 
-    monkeypatch.setattr("app.routes.api.search_meals", raise_error)
+    # Override the search_meals method to raise an error
+    override_external_client.search_meals = raise_error
 
     response = client.get("/api/recipes?search=Apple")
     assert response.status_code == 200
@@ -241,7 +242,7 @@ def test_search_external_api_failure_returns_internal_results(
 
 
 def test_home_search_shows_external_results(
-    client, clean_storage, sample_recipe_data, monkeypatch
+    client, clean_storage, sample_recipe_data, override_external_client
 ):
     """Contract test: homepage search includes external search results"""
     sample_data = sample_recipe_data.copy()
@@ -261,7 +262,7 @@ def test_home_search_shows_external_results(
         "updated_at": "2024-01-01T10:00:00",
         "source": "external",
     }
-    monkeypatch.setattr("app.routes.pages.search_meals", lambda q: [external_recipe])
+    override_external_client.search_results = [external_recipe]
 
     response = client.get("/?search=Apple")
     assert response.status_code == 200
@@ -299,7 +300,7 @@ def test_get_internal_recipe_by_id(client, clean_storage, sample_recipe_data):
     assert recipe["source"] == "internal"
 
 
-def test_get_external_recipe_by_id(client, clean_storage, monkeypatch):
+def test_get_external_recipe_by_id(client, clean_storage, override_external_client):
     """Contract test: GET /recipes/external/{id} returns external recipe"""
     external_recipe = {
         "id": "external-52772",
@@ -314,9 +315,7 @@ def test_get_external_recipe_by_id(client, clean_storage, monkeypatch):
         "updated_at": "2024-01-01T10:00:00",
         "source": "external",
     }
-    monkeypatch.setattr(
-        "app.routes.api.get_meal_by_id", lambda recipe_id: external_recipe
-    )
+    override_external_client.meal_result = external_recipe
 
     response = client.get("/api/recipes/external/52772")
     assert response.status_code == 200
@@ -325,9 +324,11 @@ def test_get_external_recipe_by_id(client, clean_storage, monkeypatch):
     assert recipe["source"] == "external"
 
 
-def test_get_external_recipe_not_found_returns_404(client, clean_storage, monkeypatch):
+def test_get_external_recipe_not_found_returns_404(
+    client, clean_storage, override_external_client
+):
     """Contract test: GET /recipes/external/{id} when not found returns 404"""
-    monkeypatch.setattr("app.routes.api.get_meal_by_id", lambda recipe_id: None)
+    override_external_client.meal_result = None
 
     response = client.get("/api/recipes/external/99999")
     assert response.status_code == 404
