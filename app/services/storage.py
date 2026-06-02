@@ -1,10 +1,8 @@
 import sqlite3
 import json
-import time # Added for Prometheus timing
 from typing import Dict, List, Optional
 from datetime import datetime
 from app.models import Recipe, RecipeCreate, RecipeUpdate
-from app.metrics import API_RESPONSE_TIME # Added Prometheus metric
 
 # Global counter for analytics (can be used for analytics)
 recipe_view_count = {}
@@ -44,23 +42,15 @@ class SQLiteRecipeStorage:
             return None
 
     def search_recipes(self, query: str) -> List[Recipe]:
-        # --- PROMETHEUS METRIC: Start Timer ---
-        start_time = time.time()
-        
-        try:
-            if not query:
-                return self.get_all_recipes()
+        if not query:
+            return self.get_all_recipes()
 
-            with self._get_connection() as conn:
-                cursor = conn.execute(
-                    "SELECT data FROM recipes WHERE title LIKE ?", 
-                    (f"%{query}%",)
-                )
-                return [Recipe(**json.loads(row[0])) for row in cursor.fetchall()]
-        finally:
-            # --- PROMETHEUS METRIC: Record Time ---
-            duration = time.time() - start_time
-            API_RESPONSE_TIME.labels(source="internal").observe(duration)
+        with self._get_connection() as conn:
+            cursor = conn.execute(
+                "SELECT data FROM recipes WHERE title LIKE ?", 
+                (f"%{query}%",)
+            )
+            return [Recipe(**json.loads(row[0])) for row in cursor.fetchall()]
 
     def create_recipe(self, recipe_data: RecipeCreate) -> Recipe:
         recipe = Recipe(**recipe_data.model_dump())

@@ -2,12 +2,11 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional
 import os
 import json
-import time # Added for Prometheus timing
 
 import httpx
 
 # --- PROMETHEUS METRICS ---
-from app.metrics import EXTERNAL_API_CALLS, API_RESPONSE_TIME, CACHE_REQUESTS
+from app.metrics import EXTERNAL_API_CALLS, CACHE_REQUESTS
 # --------------------------
 
 try:
@@ -74,19 +73,16 @@ def _transform_meal(meal_data: Dict[str, Any]) -> Dict[str, Any]:
 
 def _fetch_json(endpoint: str, params: Dict[str, Any]) -> Dict[str, Any]:
     url = f"{API_BASE_URL}/{endpoint}"
-    # --- PROMETHEUS METRIC: Start Timer ---
-    start_time = time.time()
     
     try:
         response = httpx.get(url, params=params, timeout=TIMEOUT_SECONDS)
         response.raise_for_status()
-        
-        # --- PROMETHEUS METRIC: API Success ---
+        # --- PROMETHEUS: Track External API Success ---
         EXTERNAL_API_CALLS.labels(api="mealdb", status="success").inc()
         return response.json()
         
     except httpx.RequestError as exc:
-        # --- PROMETHEUS METRIC: API Failure ---
+        # --- PROMETHEUS: Track External API Failure ---
         EXTERNAL_API_CALLS.labels(api="mealdb", status="failure").inc()
         raise ExternalAPIError(f"External API request failed: {exc}") from exc
     except httpx.HTTPStatusError as exc:
@@ -97,11 +93,6 @@ def _fetch_json(endpoint: str, params: Dict[str, Any]) -> Dict[str, Any]:
     except ValueError as exc:
         EXTERNAL_API_CALLS.labels(api="mealdb", status="failure").inc()
         raise ExternalAPIError(f"External API returned invalid JSON: {exc}") from exc
-    finally:
-        # --- PROMETHEUS METRIC: Record Time ---
-        duration = time.time() - start_time
-        API_RESPONSE_TIME.labels(source="external").observe(duration)
-
 
 def search_meals(query: str) -> List[Dict[str, Any]]:
     try:
@@ -115,18 +106,10 @@ def search_meals(query: str) -> List[Dict[str, Any]]:
             raw = client.get(cache_key)
             if raw:
                 _increment_cache_hit()
-                # --- PROMETHEUS METRIC: Cache Hit ---
-                CACHE_REQUESTS.labels(status="hit").inc()
                 data = json.loads(raw)
                 return data
-            else:
-                 # --- PROMETHEUS METRIC: Cache Miss (Key not found) ---
-                 CACHE_REQUESTS.labels(status="miss").inc()
         except Exception:
             pass
-    else:
-         # Optional: Track if Redis is completely unavailable as a miss
-         CACHE_REQUESTS.labels(status="miss").inc()
 
     payload = _fetch_json("search.php", {"s": query})
     meals = payload.get("meals")
@@ -156,12 +139,7 @@ def get_meal_by_id(meal_id: str) -> Optional[Dict[str, Any]]:
             raw = client.get(cache_key)
             if raw:
                 _increment_cache_hit()
-                # --- PROMETHEUS METRIC: Cache Hit ---
-                CACHE_REQUESTS.labels(status="hit").inc()
                 return json.loads(raw)
-            else:
-                 # --- PROMETHEUS METRIC: Cache Miss ---
-                 CACHE_REQUESTS.labels(status="miss").inc()
         except Exception:
             pass
 
@@ -201,7 +179,11 @@ def _get_redis_client():
 def _increment_cache_hit():
     global cache_hits
     cache_hits += 1
+    # --- PROMETHEUS: Guarantee Sync ---
+    CACHE_REQUESTS.labels(status="hit").inc()
 
 def _increment_cache_miss():
     global cache_misses
     cache_misses += 1
+    # --- PROMETHEUS: Guarantee Sync ---
+    CACHE_REQUESTS.labels(status="miss").inc()

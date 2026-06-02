@@ -7,11 +7,11 @@ CACHE_REQUESTS = Counter(
     ["status"] 
 )
 
-# Response times
+# Response times (Updated for global middleware)
 API_RESPONSE_TIME = Histogram(
     "api_response_time_seconds", 
     "Response time in seconds", 
-    ["source"] 
+    ["method", "endpoint"] 
 )
 
 # Recipe popularity
