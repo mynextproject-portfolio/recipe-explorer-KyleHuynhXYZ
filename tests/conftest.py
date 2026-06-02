@@ -18,10 +18,17 @@ def client():
 @pytest.fixture
 def clean_storage():
     """Reset storage before and after each test"""
-    recipe_storage.recipes.clear()
-    yield
-    recipe_storage.recipes.clear()
-
+    # Clear the SQLite database using the new storage engine's connection
+    with recipe_storage._get_connection() as conn:
+        conn.execute("DELETE FROM recipes")
+        conn.commit()
+    
+    yield # This allows the test to run
+    
+    # Run the exact same cleanup after the test finishes
+    with recipe_storage._get_connection() as conn:
+        conn.execute("DELETE FROM recipes")
+        conn.commit()
 
 @pytest.fixture
 def sample_recipe_data():

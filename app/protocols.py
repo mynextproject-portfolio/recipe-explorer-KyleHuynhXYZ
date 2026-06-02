@@ -66,3 +66,4 @@ class CacheClientProtocol(Protocol):
     def setex(self, key: str, ttl_seconds: int, value: str) -> None:
         """Set a value in cache with expiry time."""
         ...
+        
