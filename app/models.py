@@ -212,3 +212,30 @@ class Token(BaseModel):
 
 class TokenData(BaseModel):
     username: Optional[str] = None
+
+    # --- API V2 MODELS ---
+
+class NutritionInfo(BaseModel):
+    calories: Optional[int] = 0
+    protein_g: Optional[float] = 0.0
+    carbs_g: Optional[float] = 0.0
+    fat_g: Optional[float] = 0.0
+
+class RecipeV2(Recipe):
+    """Enhanced V2 schema extending the base V1 Recipe."""
+    difficulty: str = Field(default="Medium", pattern="^(Easy|Medium|Hard|Expert)$")
+    equipment: List[str] = Field(default_factory=list)
+    dietary_restrictions: List[str] = Field(default_factory=list)
+    nutrition: NutritionInfo = Field(default_factory=NutritionInfo)
+
+class RecipeCreateV2(RecipeCreate):
+    difficulty: str = "Medium"
+    equipment: List[str] = []
+    dietary_restrictions: List[str] = []
+    nutrition: Optional[NutritionInfo] = None
+
+class RecipeUpdateV2(RecipeUpdate):
+    difficulty: Optional[str] = None
+    equipment: Optional[List[str]] = None
+    dietary_restrictions: Optional[List[str]] = None
+    nutrition: Optional[NutritionInfo] = None

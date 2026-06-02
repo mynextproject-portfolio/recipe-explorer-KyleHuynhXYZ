@@ -166,6 +166,45 @@ class SQLiteRecipeStorage:
                 WHERE f.user_id = ?
             ''', (user_id,))
             return [Recipe(**json.loads(row[0])) for row in cursor.fetchall()]
+        
+    # --- API V2 METHODS ---
+
+    def get_all_recipes_v2(self) -> List[RecipeV2]:
+        """Fetch all recipes and cast them to V2 schema."""
+        with self._get_connection() as conn:
+            cursor = conn.execute("SELECT data FROM recipes")
+            # Pydantic V2 automatically applies defaults for missing fields from V1
+            return [RecipeV2(**json.loads(row[0])) for row in cursor.fetchall()]
+
+    def get_recipe_v2(self, recipe_id: str) -> Optional[RecipeV2]:
+        with self._get_connection() as conn:
+            cursor = conn.execute("SELECT data FROM recipes WHERE id = ?", (recipe_id,))
+            row = cursor.fetchone()
+            if row:
+                return RecipeV2(**json.loads(row[0]))
+            return None
+
+    def search_recipes_v2(self, query: str, difficulty: Optional[str] = None) -> List[RecipeV2]:
+        recipes = self.get_all_recipes_v2()
+        
+        # Advanced V2 Filtering
+        if query:
+            recipes = [r for r in recipes if query.lower() in r.title.lower()]
+        if difficulty:
+            recipes = [r for r in recipes if r.difficulty.lower() == difficulty.lower()]
+            
+        return recipes
+
+    def create_recipe_v2(self, recipe_data: RecipeCreateV2) -> RecipeV2:
+        recipe = RecipeV2(**recipe_data.model_dump())
+        with self._get_connection() as conn:
+            conn.execute(
+                "INSERT INTO recipes (id, title, data) VALUES (?, ?, ?)",
+                (recipe.id, recipe.title, recipe.model_dump_json())
+            )
+            conn.commit()
+        return recipe
 
 # Global storage instance injected into dependencies
 recipe_storage = SQLiteRecipeStorage("recipes.db")
+

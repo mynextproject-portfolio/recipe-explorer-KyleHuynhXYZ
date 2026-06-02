@@ -6,35 +6,27 @@ from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
-from app.routes import api, pages, auth  # Added auth here
+from app.routes import api, pages, auth, api_v2  # Add api_v2 here
 from app.services.storage import recipe_storage
 from prometheus_client import make_asgi_app
-
 from app.metrics import API_RESPONSE_TIME
 
-# App configuration
-APP_NAME = "Recipe Explorer"
-VERSION = "1.0.0"
+APP_NAME = "Recipe Explorer API"
+VERSION = "2.0.0" # Bumped to 2.0.0
 DEBUG = True
-
 SAMPLE_DATA_PATH = Path(__file__).parent.parent / "sample-recipes.json"
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Load sample recipes during application startup."""
-    if not SAMPLE_DATA_PATH.exists():
-        print(f"No sample data file found at {SAMPLE_DATA_PATH}")
-    else:
+    if SAMPLE_DATA_PATH.exists():
         try:
             with open(SAMPLE_DATA_PATH, "r", encoding="utf-8") as sample_file:
                 recipes_data = json.load(sample_file)
-            count = recipe_storage.import_recipes(recipes_data)
-            print(f"Seeded {count} recipes from {SAMPLE_DATA_PATH.name}")
-        except Exception as error:
-            print(f"Failed to seed sample data: {error}")
+            recipe_storage.import_recipes(recipes_data)
+        except Exception:
+            pass
     yield
 
-# Create FastAPI app
 app = FastAPI(title=APP_NAME, version=VERSION, lifespan=lifespan)
 
 app.add_middleware(
@@ -48,28 +40,35 @@ app.add_middleware(
 metrics_app = make_asgi_app()
 app.mount("/metrics", metrics_app)
 
+# --- DEPRECATION & TIMING MIDDLEWARE ---
 @app.middleware("http")
-async def track_response_time(request: Request, call_next):
+async def global_middleware(request: Request, call_next):
     start_time = time.time()
     response = await call_next(request)
-    duration = time.time() - start_time
     
+    # Track metrics
     if request.url.path != "/metrics":
         API_RESPONSE_TIME.labels(
-            method=request.method,
-            endpoint=request.url.path
-        ).observe(duration)
+            method=request.method, endpoint=request.url.path
+        ).observe(time.time() - start_time)
+        
+    # Inject V1 Deprecation Warning Header
+    if request.url.path.startswith("/api/recipes") or request.url.path == "/api/search":
+        response.headers["Warning"] = '299 - "This v1 API is deprecated. Please migrate to /api/v2/recipes"'
+        response.headers["X-API-Version"] = "1.0"
+    elif request.url.path.startswith("/api/v2"):
+        response.headers["X-API-Version"] = "2.0"
         
     return response
 
-# Mount static files
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
-# Include routers
+# Include Routers
 app.include_router(api.router)
 app.include_router(pages.router)
-app.include_router(auth.router)              # Added Authentication Router
-app.include_router(auth.collections_router)  # Added Collections Router
+app.include_router(auth.router)
+app.include_router(auth.collections_router)
+app.include_router(api_v2.router)  # Mount the new V2 router
 
 @app.get("/health")
 def health_check():
