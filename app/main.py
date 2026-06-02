@@ -1,3 +1,4 @@
+from fastapi.middleware.cors import CORSMiddleware
 import json
 import time
 from contextlib import asynccontextmanager
@@ -37,6 +38,14 @@ async def lifespan(app: FastAPI):
 
 # Create FastAPI app
 app = FastAPI(title=APP_NAME, version=VERSION, lifespan=lifespan)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173"], # Vite's default port
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # --- PROMETHEUS: Mount Metrics Endpoint ---
 metrics_app = make_asgi_app()
