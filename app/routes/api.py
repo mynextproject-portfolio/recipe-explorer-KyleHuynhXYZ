@@ -2,6 +2,7 @@ from fastapi import APIRouter, HTTPException, UploadFile, File, Query
 from fastapi.responses import JSONResponse
 from typing import List, Optional
 import json
+import time
 from app.models import Recipe, RecipeCreate, RecipeUpdate
 from app.services.storage import recipe_storage
 from app.services.themealdb import ExternalAPIError, get_meal_by_id, search_meals
@@ -43,23 +44,42 @@ def get_recipes(search: Optional[str] = Query(None, max_length=200)):
     - 200: List of recipes
     """
     try:
+        request_start = time.monotonic()
         internal_results = []
         external_results = []
         external_error = None
+        internal_time_ms = 0.0
+        external_time_ms = None
 
+        internal_start = time.monotonic()
         if search and search.strip():
             internal_results = recipe_storage.search_recipes(search)
+        else:
+            internal_results = recipe_storage.get_all_recipes()
+        internal_time_ms = (time.monotonic() - internal_start) * 1000
+
+        if search and search.strip():
+            external_start = time.monotonic()
             try:
                 external_results = search_meals(search)
             except ExternalAPIError as exc:
                 external_error = str(exc)
-        else:
-            internal_results = recipe_storage.get_all_recipes()
+            finally:
+                external_time_ms = (time.monotonic() - external_start) * 1000
 
         response_recipes = [serialize_recipe(recipe) for recipe in internal_results] + external_results
         result = {
             "recipes": response_recipes,
-            "count": len(response_recipes)
+            "count": len(response_recipes),
+            "metrics": {
+                "internal_ms": round(internal_time_ms, 2),
+                "external_ms": round(external_time_ms, 2) if external_time_ms is not None else None,
+                "total_ms": round((time.monotonic() - request_start) * 1000, 2),
+                "source_counts": {
+                    "internal": len(internal_results),
+                    "external": len(external_results)
+                }
+            }
         }
         if external_error:
             result["external_error"] = external_error
