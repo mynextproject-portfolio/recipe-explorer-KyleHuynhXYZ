@@ -6,13 +6,11 @@ from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
-from app.routes import api, pages
+from app.routes import api, pages, auth  # Added auth here
 from app.services.storage import recipe_storage
 from prometheus_client import make_asgi_app
 
-# --- PROMETHEUS IMPORT ---
 from app.metrics import API_RESPONSE_TIME
-# -------------------------
 
 # App configuration
 APP_NAME = "Recipe Explorer"
@@ -41,24 +39,21 @@ app = FastAPI(title=APP_NAME, version=VERSION, lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"], # Vite's default port
+    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"], 
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# --- PROMETHEUS: Mount Metrics Endpoint ---
 metrics_app = make_asgi_app()
 app.mount("/metrics", metrics_app)
 
-# --- PROMETHEUS: Global Timing Middleware ---
 @app.middleware("http")
 async def track_response_time(request: Request, call_next):
     start_time = time.time()
     response = await call_next(request)
     duration = time.time() - start_time
     
-    # Do not track the /metrics endpoint itself to keep data clean
     if request.url.path != "/metrics":
         API_RESPONSE_TIME.labels(
             method=request.method,
@@ -73,8 +68,9 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 # Include routers
 app.include_router(api.router)
 app.include_router(pages.router)
+app.include_router(auth.router)              # Added Authentication Router
+app.include_router(auth.collections_router)  # Added Collections Router
 
-# Basic health check
 @app.get("/health")
 def health_check():
     return {"status": "healthy"}
