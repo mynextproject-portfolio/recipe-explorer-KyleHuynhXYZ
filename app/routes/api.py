@@ -2,26 +2,13 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Query
 from typing import Any, List, Optional
 import json
 import time
+
 from app.models import Recipe, RecipeCreate, RecipeUpdate
-from app.services import themealdb
 from app.deps import get_storage, get_external_client
-from app.validators import (
-    validate_import_recipes,
-)
+from app.protocols import ExternalClientProtocol
+from app.services.themealdb import ExternalAPIError
+from app.validators import validate_import_recipes
 from pydantic import ValidationError as PydanticValidationError
-
-ExternalAPIError = themealdb.ExternalAPIError
-
-# Backwards-compatible wrappers used by tests and legacy call sites. Tests may monkeypatch
-# `app.routes.api.search_meals` and `app.routes.api.get_meal_by_id`; keep these wrappers
-# so those monkeypatches affect endpoint behavior.
-
-def search_meals(query: str):
-    return themealdb.search_meals(query)
-
-
-def get_meal_by_id(meal_id: str):
-    return themealdb.get_meal_by_id(meal_id)
 
 router = APIRouter(prefix="/api")
 
@@ -49,7 +36,7 @@ def serialize_recipe(recipe: Recipe, source: str = "internal") -> dict:
 def get_recipes(
     search: Optional[str] = Query(None, max_length=200),
     storage: Any = Depends(get_storage),
-    external_client: Any = Depends(get_external_client),
+    external_client: ExternalClientProtocol = Depends(get_external_client),
 ):
     """Get all recipes or search by title.
 
@@ -77,7 +64,7 @@ def get_recipes(
         if search and search.strip():
             external_start = time.monotonic()
             try:
-                external_results = search_meals(search)
+                external_results = external_client.search_meals(search)
             except ExternalAPIError as exc:
                 external_error = str(exc)
             finally:
@@ -119,7 +106,7 @@ def get_recipes(
 def search_recipes(
     q: Optional[str] = Query(None, max_length=200),
     storage: Any = Depends(get_storage),
-    external_client: Any = Depends(get_external_client),
+    external_client: ExternalClientProtocol = Depends(get_external_client),
 ):
     """Search recipes using the legacy /recipes/search?q=... route."""
     return get_recipes(search=q, storage=storage, external_client=external_client)
@@ -178,7 +165,7 @@ def get_external_recipe(recipe_id: str, external_client: Any = Depends(get_exter
             detail=create_error_response(400, "recipe_id", "Recipe ID cannot be empty"),
         )
     try:
-        recipe = get_meal_by_id(recipe_id)
+        recipe = external_client.get_meal_by_id(recipe_id)
         if not recipe:
             raise HTTPException(
                 status_code=404,
