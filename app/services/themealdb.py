@@ -5,6 +5,10 @@ import json
 
 import httpx
 
+# --- PROMETHEUS METRICS ---
+from app.metrics import EXTERNAL_API_CALLS, CACHE_REQUESTS
+# --------------------------
+
 try:
     import redis
 except Exception:
@@ -14,14 +18,11 @@ API_BASE_URL = "https://www.themealdb.com/api/json/v1/1"
 TIMEOUT_SECONDS = 5.0
 CACHE_TTL_SECONDS = 24 * 60 * 60  # 24 hours
 
-
 class ExternalAPIError(Exception):
     pass
 
-
 def _build_external_id(meal_id: str) -> str:
     return f"external-{meal_id}"
-
 
 def _parse_ingredients(meal_data: Dict[str, Any]) -> List[str]:
     ingredients: List[str] = []
@@ -36,12 +37,10 @@ def _parse_ingredients(meal_data: Dict[str, Any]) -> List[str]:
                 ingredients.append(ingredient_text)
     return ingredients
 
-
 def _parse_tags(tag_string: Optional[str]) -> List[str]:
     if not tag_string:
         return []
     return [tag.strip() for tag in tag_string.split(",") if tag.strip()]
-
 
 def _transform_meal(meal_data: Dict[str, Any]) -> Dict[str, Any]:
     meal_id = meal_data.get("idMeal")
@@ -72,25 +71,30 @@ def _transform_meal(meal_data: Dict[str, Any]) -> Dict[str, Any]:
         "source": "external",
     }
 
-
 def _fetch_json(endpoint: str, params: Dict[str, Any]) -> Dict[str, Any]:
     url = f"{API_BASE_URL}/{endpoint}"
+    
     try:
         response = httpx.get(url, params=params, timeout=TIMEOUT_SECONDS)
         response.raise_for_status()
+        # --- PROMETHEUS: Track External API Success ---
+        EXTERNAL_API_CALLS.labels(api="mealdb", status="success").inc()
         return response.json()
+        
     except httpx.RequestError as exc:
+        # --- PROMETHEUS: Track External API Failure ---
+        EXTERNAL_API_CALLS.labels(api="mealdb", status="failure").inc()
         raise ExternalAPIError(f"External API request failed: {exc}") from exc
     except httpx.HTTPStatusError as exc:
+        EXTERNAL_API_CALLS.labels(api="mealdb", status="failure").inc()
         raise ExternalAPIError(
             f"External API returned HTTP {exc.response.status_code}"
         ) from exc
     except ValueError as exc:
+        EXTERNAL_API_CALLS.labels(api="mealdb", status="failure").inc()
         raise ExternalAPIError(f"External API returned invalid JSON: {exc}") from exc
 
-
 def search_meals(query: str) -> List[Dict[str, Any]]:
-    # Caching: try Redis first
     try:
         client = _get_redis_client()
     except Exception:
@@ -105,7 +109,6 @@ def search_meals(query: str) -> List[Dict[str, Any]]:
                 data = json.loads(raw)
                 return data
         except Exception:
-            # swallow cache errors and continue to fetch
             pass
 
     payload = _fetch_json("search.php", {"s": query})
@@ -123,7 +126,6 @@ def search_meals(query: str) -> List[Dict[str, Any]]:
             pass
 
     return result
-
 
 def get_meal_by_id(meal_id: str) -> Optional[Dict[str, Any]]:
     try:
@@ -159,12 +161,10 @@ def get_meal_by_id(meal_id: str) -> Optional[Dict[str, Any]]:
 
     return transformed
 
-
 # Redis client and simple metrics
 _redis_client = None
 cache_hits = 0
 cache_misses = 0
-
 
 def _get_redis_client():
     global _redis_client
@@ -176,12 +176,14 @@ def _get_redis_client():
     _redis_client = redis.Redis.from_url(url, decode_responses=True)
     return _redis_client
 
-
 def _increment_cache_hit():
     global cache_hits
     cache_hits += 1
-
+    # --- PROMETHEUS: Guarantee Sync ---
+    CACHE_REQUESTS.labels(status="hit").inc()
 
 def _increment_cache_miss():
     global cache_misses
     cache_misses += 1
+    # --- PROMETHEUS: Guarantee Sync ---
+    CACHE_REQUESTS.labels(status="miss").inc()
