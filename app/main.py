@@ -6,6 +6,7 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from app.routes import api, pages
 from app.services.storage import recipe_storage
+from prometheus_client import make_asgi_app
 
 # App configuration
 APP_NAME = "Recipe Explorer"
@@ -35,6 +36,11 @@ async def lifespan(app: FastAPI):
 # Create FastAPI app
 app = FastAPI(title=APP_NAME, version=VERSION, lifespan=lifespan)
 
+# --- PROMETHEUS FIX: Mount the metrics endpoint ---
+metrics_app = make_asgi_app()
+app.mount("/metrics", metrics_app)
+# --------------------------------------------------
+
 # Mount static files
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
@@ -47,8 +53,3 @@ app.include_router(pages.router)
 @app.get("/health")
 def health_check():
     return {"status": "healthy"}
-
-
-# @app.get("/status")
-# def status():
-#     return {"status": "ok", "version": "1.0.0"}

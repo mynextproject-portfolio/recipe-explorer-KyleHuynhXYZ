@@ -1,0 +1,9 @@
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  - job_name: 'fastapi_app'
+    static_configs:
+      # Assuming your web service is named 'api' or 'web' in docker-compose
+      # Change 'api:8000' if your service has a different name/port
+      - targets: ['api:8000']
