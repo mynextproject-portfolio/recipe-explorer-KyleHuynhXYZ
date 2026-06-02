@@ -4,6 +4,7 @@ import os
 import json
 
 import httpx
+
 try:
     import redis
 except Exception:
@@ -49,7 +50,9 @@ def _transform_meal(meal_data: Dict[str, Any]) -> Dict[str, Any]:
 
     title = (meal_data.get("strMeal") or "").strip()
     description = (meal_data.get("strInstructions") or "").strip()
-    cuisine = (meal_data.get("strArea") or meal_data.get("strCategory") or "Unknown").strip()
+    cuisine = (
+        meal_data.get("strArea") or meal_data.get("strCategory") or "Unknown"
+    ).strip()
     ingredients = _parse_ingredients(meal_data)
     instructions_text = (meal_data.get("strInstructions") or "").strip()
     instructions = [instructions_text] if instructions_text else []
@@ -66,7 +69,7 @@ def _transform_meal(meal_data: Dict[str, Any]) -> Dict[str, Any]:
         "tags": tags,
         "created_at": datetime.now().isoformat(),
         "updated_at": datetime.now().isoformat(),
-        "source": "external"
+        "source": "external",
     }
 
 
@@ -79,7 +82,9 @@ def _fetch_json(endpoint: str, params: Dict[str, Any]) -> Dict[str, Any]:
     except httpx.RequestError as exc:
         raise ExternalAPIError(f"External API request failed: {exc}") from exc
     except httpx.HTTPStatusError as exc:
-        raise ExternalAPIError(f"External API returned HTTP {exc.response.status_code}") from exc
+        raise ExternalAPIError(
+            f"External API returned HTTP {exc.response.status_code}"
+        ) from exc
     except ValueError as exc:
         raise ExternalAPIError(f"External API returned invalid JSON: {exc}") from exc
 
